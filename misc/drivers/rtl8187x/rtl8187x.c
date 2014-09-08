@@ -62,6 +62,8 @@
 #include <errno.h>
 #include <debug.h>
 
+#include <arpa/inet.h>
+
 #include <nuttx/kmalloc.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/clock.h>
@@ -72,13 +74,13 @@
 #include <nuttx/usb/usb.h>
 #include <nuttx/usb/usbhost.h>
 
-#include <nuttx/net/uip/uip.h>
-#include <nuttx/net/uip/uip-arp.h>
-#include <nuttx/net/uip/uip-arch.h>
+#include <nuttx/net/net.h>
+#include <nuttx/net/arp.h>
+#include <nuttx/net/devif.h>
 
 #include "rtl8187x.h"
 
-#if defined(CONFIG_USBHOST) && defined(CONFIG_NET) && defined(CONFIG_NET_WLAN)
+#if defined(CONFIG_USBHOST) && defined(CONFIG_NET)
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -233,7 +235,7 @@ struct rtl8187x_state_s
 
   /* This holds the information visible to uIP/NuttX */
 
-  struct uip_driver_s        ethdev;       /* Interface understood by uIP */
+  struct net_driver_s        ethdev;       /* Interface understood by uIP */
   FAR uint8_t               *txbuffer;     /* The allocated TX I/O buffer */
   FAR uint8_t               *rxbuffer;     /* The allocated RX I/O buffer */
 };
@@ -318,7 +320,7 @@ static void rtl8187x_write(FAR struct rtl8187x_state_s *priv, uint8_t addr,
 /* TX logic */
 
 static int rtl8187x_transmit(FAR struct rtl8187x_state_s *priv);
-static int rtl8187x_uiptxpoll(struct uip_driver_s *dev);
+static int rtl8187x_txpoll(struct net_driver_s *dev);
 static void rtl8187x_txpollwork(FAR void *arg);
 static void rtl8187x_txpolltimer(int argc, uint32_t arg, ...);
 
@@ -331,12 +333,12 @@ static void rtl8187x_rxpolltimer(int argc, uint32_t arg, ...);
 
 /* Network callback functions */
 
-static int rtl8187x_ifup(struct uip_driver_s *dev);
-static int rtl8187x_ifdown(struct uip_driver_s *dev);
-static int rtl8187x_txavail(struct uip_driver_s *dev);
+static int rtl8187x_ifup(struct net_driver_s *dev);
+static int rtl8187x_ifdown(struct net_driver_s *dev);
+static int rtl8187x_txavail(struct net_driver_s *dev);
 #ifdef CONFIG_NET_IGMP
-static int rtl8187x_addmac(struct uip_driver_s *dev, FAR const uint8_t *mac);
-static int rtl8187x_rmmac(struct uip_driver_s *dev, FAR const uint8_t *mac);
+static int rtl8187x_addmac(struct net_driver_s *dev, FAR const uint8_t *mac);
+static int rtl8187x_rmmac(struct net_driver_s *dev, FAR const uint8_t *mac);
 #endif
 
 /* EEPROM support */
@@ -386,7 +388,7 @@ static int rtl8187x_netuninitialize(FAR struct rtl8187x_state_s *priv);
  * Private Data
  ****************************************************************************/
 
-/* This structure provides the registry entry ID informatino that will  be
+/* This structure provides the registry entry ID information that will  be
  * used to associate the USB class driver to a connected USB device.
  */
 
@@ -396,15 +398,15 @@ static const const struct usbhost_id_s g_id[2] =
     USB_CLASS_VENDOR_SPEC,  /* base */
     0xff,                   /* subclass */
     0xff,                   /* proto */
-    CONFIG_USB_WLAN_VID,    /* vid */
-    CONFIG_USB_WLAN_PID     /* pid */
+    CONFIG_RTL8187_VID,     /* vid */
+    CONFIG_RTL8187_PID      /* pid */
   },
   {
     0,                      /* base */
     0,                      /* subclass */
     0,                      /* proto */
-    CONFIG_USB_WLAN_VID,    /* vid */
-    CONFIG_USB_WLAN_PID     /* pid */
+    CONFIG_RTL8187_VID,     /* vid */
+    CONFIG_RTL8187_PID      /* pid */
   }
 };
 
@@ -1466,7 +1468,7 @@ static int rtl8187x_disconnected(struct usbhost_class_s *class)
 
       ullvdbg("Queuing destruction: worker %p->%p\n", priv->wkdisconn.worker, rtl8187x_destroy);
       DEBUGASSERT(priv->wkdisconn.worker == NULL);
-      (void)work_queue(&priv->wkdisconn, rtl8187x_destroy, priv, 0);
+      (void)work_queue(HPWORK, &priv->wkdisconn, rtl8187x_destroy, priv, 0);
     }
 
   irqrestore(flags);
@@ -1927,11 +1929,11 @@ static int rtl8187x_transmit(FAR struct rtl8187x_state_s *priv)
 }
 
 /****************************************************************************
- * Function: rtl8187x_uiptxpoll
+ * Function: rtl8187x_txpoll
  *
  * Description:
  *   The transmitter is available, check if uIP has any outgoing packets ready
- *   to send.  This is a callback from uip_poll().  uip_poll() may be called:
+ *   to send.  This is a callback from devif_poll().  devif_poll() may be called:
  *
  *   1. When the preceding TX packet send is complete,
  *   2. When the preceding TX packet send timesout and the interface is reset
@@ -1946,11 +1948,11 @@ static int rtl8187x_transmit(FAR struct rtl8187x_state_s *priv)
  * Assumptions:
  *  Never called from an interrupt handler.  The polling process was
  *  initiated by a normal thread (possibly the worker thread).  The initiator
- *  has called uip_lock() to assure that we have exclusive access to uIP.
+ *  has called net_lock() to assure that we have exclusive access to uIP.
  *
  ****************************************************************************/
 
-static int rtl8187x_uiptxpoll(struct uip_driver_s *dev)
+static int rtl8187x_txpoll(struct net_driver_s *dev)
 {
   FAR struct rtl8187x_state_s *priv = (FAR struct rtl8187x_state_s *)dev->d_private;
 
@@ -1960,7 +1962,7 @@ static int rtl8187x_uiptxpoll(struct uip_driver_s *dev)
 
   if (priv->ethdev.d_len > 0)
     {
-      uip_arp_out(&priv->ethdev);
+      arp_out(&priv->ethdev);
       rtl8187x_transmit(priv);
     }
 
@@ -1998,13 +2000,13 @@ static void rtl8187x_txpollwork(FAR void *arg)
 
   if (!priv->disconnected && priv->bifup)
     {
-      uip_lock_t lock;
+      net_lock_t lock;
       uint32_t   now;
       uint32_t   hsecs;
 
       /* Get exclusive access to uIP */
 
-      lock = uip_lock();
+      lock = net_lock();
 
       /* Estimate the elapsed time in hsecs since the last poll */
 
@@ -2018,8 +2020,8 @@ static void rtl8187x_txpollwork(FAR void *arg)
        */
 
       priv->ethdev.d_buf = &priv->txbuffer[SIZEOF_TXDESC];
-      (void)uip_timer(&priv->ethdev, rtl8187x_uiptxpoll, (int)hsecs);
-      uip_unlock(lock);
+      (void)devif_timer(&priv->ethdev, rtl8187x_txpoll, (int)hsecs);
+      net_unlock(lock);
     }
 }
 
@@ -2064,7 +2066,7 @@ static void rtl8187x_txpolltimer(int argc, uint32_t arg, ...)
         }
       else
         {
-          (void)work_queue(&priv->wktxpoll, rtl8187x_txpollwork, priv, 0);
+          (void)work_queue(HPWORK, &priv->wktxpoll, rtl8187x_txpollwork, priv, 0);
         }
     }
 
@@ -2110,7 +2112,7 @@ static inline int rtl8187x_receive(FAR struct rtl8187x_state_s *priv,
    * and an Ethernet header
    */
 
-  if (iolen < UIP_LLH_LEN + SIZEOF_RXDESC)
+  if (iolen < NET_LL_HDRLEN + SIZEOF_RXDESC)
     {
       RTL8187X_STATS(priv, rxtoosmall);
       RTL8187X_STATS(priv, rxdropped);
@@ -2223,26 +2225,26 @@ static inline int rtl8187x_receive(FAR struct rtl8187x_state_s *priv,
 static inline void rtl8187x_rxdispatch(FAR struct rtl8187x_state_s *priv,
                                        unsigned int pktlen)
 {
-  FAR struct uip_eth_hdr *ethhdr = (FAR struct uip_eth_hdr *)priv->rxbuffer;
-  uip_lock_t lock;
+  FAR struct eth_hdr_s *ethhdr = (FAR struct eth_hdr_s *)priv->rxbuffer;
+  net_lock_t lock;
 
   /* Get exclusive access to uIP */
 
-  lock               = uip_lock();
+  lock               = net_lock();
   priv->ethdev.d_buf = priv->rxbuffer;
   priv->ethdev.d_len = pktlen;
 
   /* We only accept IP packets of the configured type and ARP packets */
 
 #ifdef CONFIG_NET_IPv6
-  if (ethhdr->type == HTONS(UIP_ETHTYPE_IP6))
+  if (ethhdr->type == HTONS(ETHTYPE_IP6))
 #else
-  if (ethhdr->type == HTONS(UIP_ETHTYPE_IP))
+  if (ethhdr->type == HTONS(ETHTYPE_IP))
 #endif
     {
       RTL8187X_STATS(priv, rxippackets);
-      uip_arp_ipin(&priv->ethdev);
-      uip_input(&priv->ethdev);
+      arp_ipin(&priv->ethdev);
+      devif_input(&priv->ethdev);
 
       /* If the above function invocation resulted in data that should be
        * sent out on the network, the field  d_len will set to a value > 0.
@@ -2250,14 +2252,14 @@ static inline void rtl8187x_rxdispatch(FAR struct rtl8187x_state_s *priv,
 
       if (priv->ethdev.d_len > 0)
         {
-          uip_arp_out(&priv->ethdev);
+          arp_out(&priv->ethdev);
           rtl8187x_transmit(priv);
         }
     }
-  else if (ethhdr->type == htons(UIP_ETHTYPE_ARP))
+  else if (ethhdr->type == htons(ETHTYPE_ARP))
     {
       RTL8187X_STATS(priv, rxarppackets);
-      uip_arp_arpin(&priv->ethdev);
+      arp_arpin(&priv->ethdev);
 
       /* If the above function invocation resulted in data that should be
        * sent out on the network, the field  d_len will set to a value > 0.
@@ -2274,7 +2276,7 @@ static inline void rtl8187x_rxdispatch(FAR struct rtl8187x_state_s *priv,
       RTL8187X_STATS(priv, rxdropped);
     }
 
-  uip_unlock(lock);
+  net_unlock(lock);
 }
 
 /****************************************************************************
@@ -2388,7 +2390,7 @@ static void rtl8187x_rxpolltimer(int argc, uint32_t arg, ...)
         }
       else
         {
-          (void)work_queue(&priv->wkrxpoll, rtl8187x_rxpollwork, priv, 0);
+          (void)work_queue(HPWORK, &priv->wkrxpoll, rtl8187x_rxpollwork, priv, 0);
         }
     }
 
@@ -2414,7 +2416,7 @@ static void rtl8187x_rxpolltimer(int argc, uint32_t arg, ...)
  *
  ****************************************************************************/
 
-static int rtl8187x_ifup(struct uip_driver_s *dev)
+static int rtl8187x_ifup(struct net_driver_s *dev)
 {
   FAR struct rtl8187x_state_s *priv = (FAR struct rtl8187x_state_s *)dev->d_private;
   int ret;
@@ -2461,7 +2463,7 @@ static int rtl8187x_ifup(struct uip_driver_s *dev)
  *
  ****************************************************************************/
 
-static int rtl8187x_ifdown(struct uip_driver_s *dev)
+static int rtl8187x_ifdown(struct net_driver_s *dev)
 {
   FAR struct rtl8187x_state_s *priv = (FAR struct rtl8187x_state_s *)dev->d_private;
   irqstate_t flags;
@@ -2505,7 +2507,7 @@ static int rtl8187x_ifdown(struct uip_driver_s *dev)
  *
  ****************************************************************************/
 
-static int rtl8187x_txavail(struct uip_driver_s *dev)
+static int rtl8187x_txavail(struct net_driver_s *dev)
 {
   FAR struct rtl8187x_state_s *priv = (FAR struct rtl8187x_state_s *)dev->d_private;
 
@@ -2513,17 +2515,17 @@ static int rtl8187x_txavail(struct uip_driver_s *dev)
 
   if (priv->bifup)
     {
-      uip_lock_t lock;
+      net_lock_t lock;
 
       /* If so, then poll uIP for new XMIT data.  Pass the offset address
        * into the txbuffer, reserving space for the TX descriptor at the
        * beginning of the buffer.
        */
 
-      lock = uip_lock();
+      lock = net_lock();
       priv->ethdev.d_buf = &priv->txbuffer[SIZEOF_TXDESC];
-      (void)uip_poll(&priv->ethdev, rtl8187x_uiptxpoll);
-      uip_unlock(lock);
+      (void)devif_poll(&priv->ethdev, rtl8187x_txpoll);
+      net_unlock(lock);
     }
 
   return OK;
@@ -2548,7 +2550,7 @@ static int rtl8187x_txavail(struct uip_driver_s *dev)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_IGMP
-static int rtl8187x_addmac(struct uip_driver_s *dev, FAR const uint8_t *mac)
+static int rtl8187x_addmac(struct net_driver_s *dev, FAR const uint8_t *mac)
 {
   FAR struct rtl8187x_state_s *priv = (FAR struct rtl8187x_state_s *)dev->d_private;
 
@@ -2577,7 +2579,7 @@ static int rtl8187x_addmac(struct uip_driver_s *dev, FAR const uint8_t *mac)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_IGMP
-static int rtl8187x_rmmac(struct uip_driver_s *dev, FAR const uint8_t *mac)
+static int rtl8187x_rmmac(struct net_driver_s *dev, FAR const uint8_t *mac)
 {
   FAR struct rtl8187x_state_s *priv = (FAR struct rtl8187x_state_s *)dev->d_private;
 
@@ -3578,7 +3580,7 @@ static int rtl8187x_reset(struct rtl8187x_state_s *priv)
 
   /* Turn on ANAPARAM */
 
-  rtl8187x_anaparamon(priv)
+  rtl8187x_anaparamon(priv);
 
   /* Reset PLL sequence on 8187B. Realtek note: reduces power
    * consumption about 30 mA
@@ -3604,7 +3606,7 @@ static int rtl8187x_reset(struct rtl8187x_state_s *priv)
   rtl8187x_iowrite16(priv, (uint16_t*)0xff34, 0x0fff);
 
   regval = rtl818x_ioread8(priv, RTL8187X_ADDR_CWCONF);
-  regval |= RTL818X_CW_CONF_PERPACKET_RETRY_SHIFT;
+  regval |= RTL8187X_CW_CONF_PERPACKET_RETRY_SHIFT;
   rtl8187x_iowrite8(priv, RTL8187X_ADDR_CWCONF, regval);
 
   /* Auto Rate Fallback Register (ARFR): 1M-54M setting */
@@ -3613,10 +3615,10 @@ static int rtl8187x_reset(struct rtl8187x_state_s *priv)
   rtl8187x_iowrite8_idx(priv, (uint8_t*)0xffe2, 0x00, 1);
   rtl8187x_iowrite16_idx(priv, (uint16_t*)0xffd4, 0xffff, 1);
 
-  rtl8187x_iowrite8(priv, RTL8187X_ADDR_EEPROMCMD, RTL818X_EEPROMCMD_CONFIG);
+  rtl8187x_iowrite8(priv, RTL8187X_ADDR_EEPROMCMD, RTL8187X_EEPROMCMD_CONFIG);
   regval = rtl818x_ioread8(priv, RTL8187X_ADDR_CONFIG1);
   rtl8187x_iowrite8(priv, RTL8187X_ADDR_CONFIG1, (regval & 0x3f) | 0x80);
-  rtl8187x_iowrite8(priv, RTL8187X_ADDR_EEPROMCMD, RTL818X_EEPROMCMD_NORMAL);
+  rtl8187x_iowrite8(priv, RTL8187X_ADDR_EEPROMCMD, RTL8187X_EEPROMCMD_NORMAL);
 
   rtl8187x_iowrite8(priv, RTL8187X_ADDR_WPACONF, 0);
   for (i = 0; i < ARRAY_SIZE(rtl8187b_reg_table); i++) {
@@ -3646,7 +3648,7 @@ static int rtl8187x_reset(struct rtl8187x_state_s *priv)
 
   priv->rf->init(dev);
 
-  regval = RTL818X_CMD_TX_ENABLE | RTL818X_CMD_RX_ENABLE;
+  regval = RTL8187X_CMD_TX_ENABLE | RTL8187X_CMD_RX_ENABLE;
   rtl8187x_iowrite8(priv, RTL8187X_ADDR_CMD, regval);
   rtl8187x_iowrite16(priv, RTL8187X_ADDR_INTMASK, 0xffff);
 
@@ -3684,7 +3686,7 @@ static int rtl8187x_reset(struct rtl8187x_state_s *priv)
 
   /* ENEDCA flag must always be set, transmit issues? */
 
-  rtl8187x_iowrite8(priv, RTL8187X_ADDR_MSR, RTL818X_MSR_ENEDCA);
+  rtl8187x_iowrite8(priv, RTL8187X_ADDR_MSR, RTL8187X_MSR_ENEDCA);
 #else
 
   /* reset */
@@ -3876,11 +3878,11 @@ static int rtl8187x_start(FAR struct rtl8187x_state_s *priv)
 
 #ifdef CONFIG_RTL8187B
 
-  regval = RTL818X_RXCONF_MGMT | RTL818X_RXCONF_DATA | RTL818X_RXCONF_BROADCAST |
-           RTL818X_RXCONF_NICMAC | RTL818X_RX_ONF_BSSID |
+  regval = RTL8187X_RXCONF_MGMT | RTL8187X_RXCONF_DATA | RTL8187X_RXCONF_BROADCAST |
+           RTL8187X_RXCONF_NICMAC | RTL8187X_RX_ONF_BSSID |
            (7 << 13 /* RX FIFO threshold NONE */) |
            (7 << 10 /* MAX RX DMA */) |
-           RTL818X_RXCONF_RX_AUTORESETPHY | RTL818X_RXCONF_ONLYERLPKT | RTL818X_RXCONF_MULTICAST;
+           RTL8187X_RXCONF_RX_AUTORESETPHY | RTL8187X_RXCONF_ONLYERLPKT | RTL8187X_RXCONF_MULTICAST;
   rtl8187x_iowrite32(priv, RTL8187X_ADDR_RXCONF, regval);
 
   regval  = rtl8187x_ioread8(priv, RTL8187X_ADDR_TXAGCCTL);
@@ -3889,7 +3891,7 @@ static int rtl8187x_start(FAR struct rtl8187x_state_s *priv)
   regval &= ~RTL8187X_TXAGCCTL_FEEDBACKANT;
   rtl8187x_iowrite8(priv, RTL8187X_ADDR_TXAGCCTL, regval);
 
-  regval = RTL818X_TXCONF_HWSEQNUM | RTL818X_TXCONF_DISREQQSIZE |
+  regval = RTL8187X_TXCONF_HWSEQNUM | RTL8187X_TXCONF_DISREQQSIZE |
            (7 << 8  /* short retry limit */) |
            (7 << 0  /* long retry limit */) |
            (7 << 21 /* MAX TX DMA */);
@@ -4032,7 +4034,7 @@ static int rtl8187x_setup(FAR struct rtl8187x_state_s *priv)
 
 #ifdef CONFIG_RTL8187B
 
-  rtl8187x_eeprom_read(&priv, RTL8187_EEPROM_TXPWR_CHAN_6, &txpwr);
+  rtl8187x_eeprom_read(&priv, RTL8187X_EEPROM_TXPWRCHAN6, &txpwr);
   (*channel++).val = txpwr & 0xff;
 
   rtl8187x_eeprom_read(&priv, 0x0a, &txpwr);
@@ -4040,7 +4042,7 @@ static int rtl8187x_setup(FAR struct rtl8187x_state_s *priv)
 
   rtl8187x_eeprom_read(&priv, 0x1c, &txpwr);
   (*channel++).val = txpwr & 0xff;
-  (*channel++).val= txpwr
+  (*channel++).val= txpwr;
 
 #else
 
@@ -4208,6 +4210,6 @@ int usbhost_wlaninit(void)
   return usbhost_registerclass(&g_wlan);
 }
 
-#endif /* CONFIG_USBHOST && CONFIG_NET && CONFIG_NET_WLAN */
+#endif /* CONFIG_USBHOST && CONFIG_NET */
 
 

@@ -99,7 +99,7 @@ Contents
 Development Environment
 =======================
 
-  Several possible development environments may be use:
+  Several possible development environments may be used:
 
   - Linux or OSX native
   - Cygwin unders Windows
@@ -895,25 +895,25 @@ Networking
   -----------------------------
 
   System Type
-    CONFIG_ARCH_CHIP_ATSAMA5D31=y       : SAMA5D31 or SAMAD35 support EMAC
-    CONFIG_ARCH_CHIP_ATSAMA5D35=y       : (others do not)
+    CONFIG_ARCH_CHIP_ATSAMA5D31=y        : SAMA5D31 or SAMAD35 support EMAC
+    CONFIG_ARCH_CHIP_ATSAMA5D35=y        : (others do not)
 
   System Type -> SAMA5 Peripheral Support
-    CONFIG_SAMA5_EMAC=y                 : Enable the EMAC peripheral
+    CONFIG_SAMA5_EMACA=y                  : Enable the EMAC (type A) peripheral
 
   System Type -> EMAC device driver options
-    CONFIG_SAMA5_EMAC_NRXBUFFERS=16     : Set aside some RS and TX buffers
+    CONFIG_SAMA5_EMAC_NRXBUFFERS=16      : Set aside some RS and TX buffers
     CONFIG_SAMA5_EMAC_NTXBUFFERS=4
-    CONFIG_SAMA5_EMAC_PHYADDR=1         : KSZ8021/31 PHY is at address 1
-    CONFIG_SAMA5_EMAC_AUTONEG=y         : Use autonegotiation
-    CONFIG_SAMA5_EMAC_RMII=y            : Either MII or RMII interface should work
-    CONFIG_SAMA5_EMAC_PHYSR=30          : Address of PHY status register on KSZ8021/31
-    CONFIG_SAMA5_EMAC_PHYSR_ALTCONFIG=y : Needed for KSZ8021/31
-    CONFIG_SAMA5_EMAC_PHYSR_ALTMODE=0x7 : "    " " " "     "
-    CONFIG_SAMA5_EMAC_PHYSR_10HD=0x1    : "    " " " "     "
-    CONFIG_SAMA5_EMAC_PHYSR_100HD=0x2   : "    " " " "     "
-    CONFIG_SAMA5_EMAC_PHYSR_10FD=0x5    : "    " " " "     "
-    CONFIG_SAMA5_EMAC_PHYSR_100FD=0x6   : "    " " " "     "
+    CONFIG_SAMA5_EMAC_PHYADDR=1          : KSZ8021/31 PHY is at address 1
+    CONFIG_SAMA5_EMAC_AUTONEG=y          : Use autonegotiation
+    CONFIG_SAMA5_EMAC_RMII=y             : Either MII or RMII interface should work
+    CONFIG_SAMA5_EMAC_PHYSR=30           : Address of PHY status register on KSZ8021/31
+    CONFIG_SAMA5_EMAC_PHYSR_ALTCONFIG=y  : Needed for KSZ8021/31
+    CONFIG_SAMA5_EMAC_PHYSR_ALTMODE=0x7  : "    " " " "     "
+    CONFIG_SAMA5_EMAC_PHYSR_10HD=0x1     : "    " " " "     "
+    CONFIG_SAMA5_EMAC_PHYSR_100HD=0x2    : "    " " " "     "
+    CONFIG_SAMA5_EMAC_PHYSR_10FD=0x5     : "    " " " "     "
+    CONFIG_SAMA5_EMAC_PHYSR_100FD=0x6    : "    " " " "     "
 
   PHY selection.  Later in the configuration steps, you will need to select
   the KSZ8021/31 PHY for EMAC (See below)
@@ -922,22 +922,22 @@ Networking
   -----------------------------
 
   System Type
-    CONFIG_ARCH_CHIP_ATSAMA5D33=y       : SAMA5D31, SAMA5D33 and SAMAD35
-    CONFIG_ARCH_CHIP_ATSAMA5D34=y       : support GMAC (others do not)
-    CONFIG_ARCH_CHIP_ATSAMA5D35=y       :
+    CONFIG_ARCH_CHIP_ATSAMA5D33=y        : SAMA5D31, SAMA5D33 and SAMAD35
+    CONFIG_ARCH_CHIP_ATSAMA5D34=y        : support GMAC (others do not)
+    CONFIG_ARCH_CHIP_ATSAMA5D35=y        :
 
   System Type -> SAMA5 Peripheral Support
-    CONFIG_SAMA5_GMAC=y                 : Enable the GMAC peripheral
+    CONFIG_SAMA5_GMAC=y                  : Enable the GMAC peripheral
 
   System Type -> GMAC device driver options
-    CONFIG_SAMA5_GMAC_NRXBUFFERS=16     : Set aside some RS and TX buffers
+    CONFIG_SAMA5_GMAC_NRXBUFFERS=16      : Set aside some RS and TX buffers
     CONFIG_SAMA5_GMAC_NTXBUFFERS=4
-    CONFIG_SAMA5_GMAC_PHYADDR=1         : KSZ8051 PHY is at address 1
-    CONFIG_SAMA5_GMAC_AUTONEG=y         : Use autonegotiation
+    CONFIG_SAMA5_GMAC_PHYADDR=1          : KSZ8051 PHY is at address 1
+    CONFIG_SAMA5_GMAC_AUTONEG=y          : Use autonegotiation
 
   If both EMAC and GMAC are selected, you will also need:
 
-    CONFIG_SAMA5_GMAC_ISETH0=y          : GMAC is "eth0"; EMAC is "eth1"
+    CONFIG_SAMA5_GMAC_ISETH0=y           : GMAC is "eth0"; EMAC is "eth1"
 
   PHY selection.  Later in the configuration steps, you will need to select
   the  KSZ9021/31 PHY for GMAC (See below)
@@ -946,36 +946,36 @@ Networking
   -----------------------------
 
   Networking Support
-    CONFIG_NET=y                        : Enable Neworking
-    CONFIG_NET_SOCKOPTS=y               : Enable socket operations
-    CONFIG_NET_BUFSIZE=562              : Maximum packet size (MTD) 1518 is more standard
-    CONFIG_NET_RECEIVE_WINDOW=562       : Should be the same as CONFIG_NET_BUFSIZE
-    CONFIG_NET_TCP=y                    : Enable TCP/IP networking
-    CONFIG_NET_TCPBACKLOG=y             : Support TCP/IP backlog
-    CONFIG_NET_TCP_READAHEAD_BUFSIZE=562  Read-ahead buffer size
-    CONFIG_NET_UDP=y                    : Enable UDP networking
-    CONFIG_NET_ICMP=y                   : Enable ICMP networking
-    CONFIG_NET_ICMP_PING=y              : Needed for NSH ping command
-                                        : Defaults should be okay for other options
+    CONFIG_NET=y                         : Enable Neworking
+    CONFIG_NET_SOCKOPTS=y                : Enable socket operations
+    CONFIG_NET_BUFSIZE=562               : Maximum packet size (MTD) 1518 is more standard
+    CONFIG_NET_RECEIVE_WINDOW=562        : Should be the same as CONFIG_NET_BUFSIZE
+    CONFIG_NET_TCP=y                     : Enable TCP/IP networking
+    CONFIG_NET_TCPBACKLOG=y              : Support TCP/IP backlog
+    CONFIG_NET_TCP_READAHEAD_BUFSIZE=562 : Read-ahead buffer size
+    CONFIG_NET_UDP=y                     : Enable UDP networking
+    CONFIG_NET_ICMP=y                    : Enable ICMP networking
+    CONFIG_NET_ICMP_PING=y               : Needed for NSH ping command
+                                         : Defaults should be okay for other options
   Device drivers -> Network Device/PHY Support
-    CONFIG_NETDEVICES=y                 : Enabled PHY selection
-    CONFIG_ETH0_PHY_KSZ8051=y           : Select the KSZ8051 PHY (for EMAC), OR
-    CONFIG_ETH0_PHY_KSZ90x1=y           : Select the KSZ9021/31 PHY (for GMAC)
+    CONFIG_NETDEVICES=y                  : Enabled PHY selection
+    CONFIG_ETH0_PHY_KSZ8051=y            : Select the KSZ8051 PHY (for EMAC), OR
+    CONFIG_ETH0_PHY_KSZ90x1=y            : Select the KSZ9021/31 PHY (for GMAC)
 
   Application Configuration -> Network Utilities
-    CONFIG_NETUTILS_DNSCLIENT=y            : Enable host address resolution
-    CONFIG_NETUTILS_TELNETD=y           : Enable the Telnet daemon
-    CONFIG_NETUTILS_TFTPC=y             : Enable TFTP data file transfers for get and put commands
-    CONFIG_NETUTILS_UIPLIB=y            : Network library support is needed
-    CONFIG_NETUTILS_WEBCLIENT=y         : Needed for wget support
-                                        : Defaults should be okay for other options
+    CONFIG_NETUTILS_DNSCLIENT=y          : Enable host address resolution
+    CONFIG_NETUTILS_TELNETD=y            : Enable the Telnet daemon
+    CONFIG_NETUTILS_TFTPC=y              : Enable TFTP data file transfers for get and put commands
+    CONFIG_NETUTILS_NETLIB=y             : Network library support is needed
+    CONFIG_NETUTILS_WEBCLIENT=y          : Needed for wget support
+                                         : Defaults should be okay for other options
   Application Configuration -> NSH Library
-    CONFIG_NSH_TELNET=y                 : Enable NSH session via Telnet
-    CONFIG_NSH_IPADDR=0x0a000002        : Select an IP address
-    CONFIG_NSH_DRIPADDR=0x0a000001      : IP address of gateway/host PC
-    CONFIG_NSH_NETMASK=0xffffff00       : Netmask
-    CONFIG_NSH_NOMAC=y                  : Need to make up a bogus MAC address
-                                        : Defaults should be okay for other options
+    CONFIG_NSH_TELNET=y                  : Enable NSH session via Telnet
+    CONFIG_NSH_IPADDR=0x0a000002         : Select an IP address
+    CONFIG_NSH_DRIPADDR=0x0a000001       : IP address of gateway/host PC
+    CONFIG_NSH_NETMASK=0xffffff00        : Netmask
+    CONFIG_NSH_NOMAC=y                   : Need to make up a bogus MAC address
+                                         : Defaults should be okay for other options
 
   Using the network with NSH
   --------------------------
@@ -2487,9 +2487,27 @@ RTC
       CONFIG_RTC=y                         : Use the RTC for system time
       CONFIG_RTC_DATETIME=y                : RTC supports data/time
 
-  The RTC supports an alarm that may be enable with the following settings.
-  However, there is nothing in the system that currently makes use of this
-  alarm.
+  You can set the RTC using the NSH date command:
+
+    NuttShell (NSH) NuttX-7.3
+    nsh> help date
+    date usage:  date [-s "MMM DD HH:MM:SS YYYY"]
+    nsh> date
+    Jan 01 00:34:45 2012
+    nsh> date -s "JUN 29 7:30:00 2014"
+    nsh> date
+    Jun 29 07:30:01 2014
+
+  After a power cycle and reboot:
+
+    NuttShell (NSH) NuttX-7.3
+    nsh> date
+    Jun 29 07:30:55 2014
+    nsh>
+
+  The RTC also supports an alarm that may be enable with the following
+  settings.  However, there is nothing in the system that currently makes
+  use of this alarm.
 
     Drivers:
       CONFIG_RTC_ALARM=y                   : Enable the RTC alarm
@@ -2535,13 +2553,17 @@ TRNG and /dev/random
 
   NSH can be configured to enable the SAMA5 TRNG peripheral so that it
   provides /dev/random.  The following configuration will enable the TRNG,
-  /dev/random, and the simple test of /dev/random at apps/examples/ranadom:
+  and support for /dev/random:
 
     System Type:
       CONFIG_SAMA5_TRNG=y                 : Enable the TRNG peripheral
 
-    Drivers (automatically selected):
+    Drivers:
       CONFIG_DEV_RANDOM=y                 : Enable /dev/random
+
+  A simple test of /dev/random is available at apps/examples/random and
+  can be enabled as a NSH application via the following additional
+  configuration settings:
 
     Applications -> Examples
       CONFIG_EXAMPLES_RANDOM=y            : Enable apps/examples/random
@@ -2822,7 +2844,7 @@ SAMA5D3x-EK Configuration Options
     CONFIG_SAMA5_UHPHS       - USB Host High Speed
     CONFIG_SAMA5_UDPHS       - USB Device High Speed
     CONFIG_SAMA5_GMAC        - Gigabit Ethernet MAC
-    CONFIG_SAMA5_EMAC        - Ethernet MAC
+    CONFIG_SAMA5_EMACA       - Ethernet MAC (Type A)
     CONFIG_SAMA5_LCDC        - LCD Controller
     CONFIG_SAMA5_ISI         - Image Sensor Interface
     CONFIG_SAMA5_SSC0        - Synchronous Serial Controller 0

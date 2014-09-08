@@ -224,9 +224,16 @@ static inline void __ramfunc__ sam_pllasetup(void)
 
   /* Configure PLLA */
 
-  regval = (BOARD_CKGR_PLLAR_DIV | BOARD_CKGR_PLLAR_COUNT |
-            BOARD_CKGR_PLLAR_OUT | BOARD_CKGR_PLLAR_MUL |
+#ifdef SAMA5_HAVE_PLLAR_DIV
+  regval = (BOARD_CKGR_PLLAR_DIV      | BOARD_CKGR_PLLAR_COUNT |
+            BOARD_CKGR_PLLAR_OUT      | BOARD_CKGR_PLLAR_MUL   |
             PMC_CKGR_PLLAR_ONE);
+#else
+  regval = (PMC_CKGR_PLLAR_DIV_BYPASS | BOARD_CKGR_PLLAR_COUNT |
+            BOARD_CKGR_PLLAR_OUT      | BOARD_CKGR_PLLAR_MUL   |
+            PMC_CKGR_PLLAR_ONE);
+#endif
+
   putreg32(regval, SAM_PMC_CKGR_PLLAR);
 
   /* Set the PLL Charge Pump Current Register to zero */
@@ -344,6 +351,44 @@ static inline void __ramfunc__ sam_mckdivider(void)
 #endif
 
 /****************************************************************************
+ * Name: sam_h32mxdivider
+ *
+ * Description:
+ *   Set the H32MX divider.
+ *
+ *   0: The AHB 32-bit Matrix frequency is equal to the AHB 64-bit Matrix
+ *      frequency. It is possible only if the AHB 64-bit Matrix frequency
+ *      does not exceed 90 MHz.
+ *   1: H32MXDIV2 The AHB 32-bit Matrix frequency is equal to the AHB 64-bit
+ *      Matrix frequency divided by 2.
+ *
+ ****************************************************************************/
+
+#ifdef PMC_MCKR_H32MXDIV
+static inline void __ramfunc__ sam_h32mxdivider(void)
+{
+  uint32_t regval;
+
+  regval = getreg32(SAM_PMC_MCKR);
+
+  /* Check the 64-bit Matrix frequency (MCK, right?) */
+
+  if (BOARD_MCK_FREQUENCY <= 90000000)
+    {
+      regval &= ~PMC_MCKR_H32MXDIV;
+    }
+  else
+    {
+      regval |= PMC_MCKR_H32MXDIV;
+    }
+
+  putreg32(regval, SAM_PMC_MCKR);
+}
+#else
+#  define sam_h32mxdivider()
+#endif
+
+/****************************************************************************
  * Name: sam_selectplla
  *
  * Description:
@@ -447,15 +492,13 @@ static inline void sam_usbclockconfig(void)
    *    PMC_USB register. USBDIV must be 9 (division by 10) if UPLLCK is
    *    selected.
    *
-   * REVISIT:  The divisor of 10 produces a rate that is too high. Division
-   * by 5, however, seems to work just fine.  No idea why?
+   * REVISIT:  The divisor of 10 produces a rate that is too high with
+   * SAMA5D3.  A divisor of 5, however, seems to work just fine for the
+   * SAMA5D3.  The SAMA5D4, on the other hand, needs the divisor of 10.
+   * No idea why?  Let the board.h file decide which to use.
    */
 
-#if 1 /* REVISIT */
-  regval |= PMC_USB_USBDIV(4);  /* Division by 5 */
-#else
-  regval |= PMC_USB_USBDIV(9);  /* Division by 10 */
-#endif
+  regval |= PMC_USB_USBDIV(BOARD_UPLL_OHCI_DIV-1);
   putreg32(regval, SAM_PMC_USB);
 
 #else /* BOARD_USE_UPLL */
@@ -646,6 +689,10 @@ void __ramfunc__ sam_clockconfig(void)
       /* Configure MCK Divider */
 
       sam_mckdivider();
+
+      /* Configure the H32MX Divider */
+
+      sam_h32mxdivider();
 
       /* Finally, elect the PLLA output as the input clock for PCK and MCK. */
 

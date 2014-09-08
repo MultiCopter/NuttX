@@ -73,6 +73,11 @@
 #elif defined(CONFIG_ARCH_CHIP_SAM3A) || defined(CONFIG_ARCH_CHIP_SAM3X)
 #  define BOARD_CKGR_PLLAR  (PMC_CKGR_PLLAR_ONE | BOARD_CKGR_PLLAR_MUL | \
                              BOARD_CKGR_PLLAR_COUNT | BOARD_CKGR_PLLAR_DIV)
+#elif defined(CONFIG_ARCH_CHIP_SAM4CM)
+#  define BOARD_CKGR_PLLAR  (PMC_CKGR_PLLAR_ONE | BOARD_CKGR_PLLAR_MUL | \
+                             BOARD_CKGR_PLLAR_COUNT | BOARD_CKGR_PLLAR_DIV)
+#  define BOARD_CKGR_PLLBR  (BOARD_CKGR_PLLBR_DIV | BOARD_CKGR_PLLBR_MUL | \
+                             BOARD_CKGR_PLLBR_COUNT | BOARD_CKGR_PLLBR_SRCB)
 #elif defined(CONFIG_ARCH_CHIP_SAM4S) || defined(CONFIG_ARCH_CHIP_SAM4E)
 #  define BOARD_CKGR_PLLAR  (PMC_CKGR_PLLAR_ONE | BOARD_CKGR_PLLAR_MUL | \
                              BOARD_CKGR_PLLAR_COUNT | BOARD_CKGR_PLLAR_DIV)
@@ -238,6 +243,13 @@ static inline void sam_pmcsetup(void)
 
   putreg32(BOARD_CKGR_PLLAR, SAM_PMC_CKGR_PLLAR);
   sam_pmcwait(PMC_INT_LOCKA);
+
+#ifdef CONFIG_ARCH_CHIP_SAM4CM
+  /* Setup PLLB and wait for LOCKB */
+
+  putreg32(BOARD_CKGR_PLLBR, SAM_PMC_CKGR_PLLBR);
+  sam_pmcwait(PMC_INT_LOCKB);
+#endif
 
 #ifdef CONFIG_USBDEV
   /* Setup UTMI for USB and wait for LOCKU */

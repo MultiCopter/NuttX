@@ -70,7 +70,8 @@
 #include "sam_pio.h"
 #include "sam_twi.h"
 
-#if defined(CONFIG_SAMA5_TWI0) || defined(CONFIG_SAMA5_TWI1) || defined(CONFIG_SAMA5_TWI2)
+#if defined(CONFIG_SAMA5_TWI0) || defined(CONFIG_SAMA5_TWI1) || \
+    defined(CONFIG_SAMA5_TWI2) || defined(CONFIG_SAMA5_TWI3)
 
 /*******************************************************************************
  * Pre-processor Definitions
@@ -87,6 +88,10 @@
 
 #ifndef CONFIG_SAMA5_TWI2_FREQUENCY
  #define CONFIG_SAMA5_TWI2_FREQUENCY 100000
+#endif
+
+#ifndef CONFIG_SAMA5_TWI3_FREQUENCY
+ #define CONFIG_SAMA5_TWI3_FREQUENCY 100000
 #endif
 
 /* Driver internal definitions *************************************************/
@@ -186,6 +191,9 @@ static int twi1_interrupt(int irq, FAR void *context);
 #ifdef CONFIG_SAMA5_TWI2
 static int twi2_interrupt(int irq, FAR void *context);
 #endif
+#ifdef CONFIG_SAMA5_TWI3
+static int twi3_interrupt(int irq, FAR void *context);
+#endif
 static void twi_timeout(int argc, uint32_t arg, ...);
 
 static void twi_startread(struct twi_dev_s *priv, struct i2c_msg_s *msg);
@@ -235,6 +243,10 @@ static struct twi_dev_s g_twi1;
 
 #ifdef CONFIG_SAMA5_TWI2
 static struct twi_dev_s g_twi2;
+#endif
+
+#ifdef CONFIG_SAMA5_TWI3
+static struct twi_dev_s g_twi3;
 #endif
 
 struct i2c_ops_s g_twiops =
@@ -617,6 +629,13 @@ static int twi1_interrupt(int irq, FAR void *context)
 static int twi2_interrupt(int irq, FAR void *context)
 {
   return twi_interrupt(&g_twi2);
+}
+#endif
+
+#ifdef CONFIG_SAMA5_TWI3
+static int twi3_interrupt(int irq, FAR void *context)
+{
+  return twi_interrupt(&g_twi3);
 }
 #endif
 
@@ -1008,6 +1027,9 @@ static int twi_registercallback(FAR struct i2c_dev_s *dev,
  *   Receive a block of data on I2C using the previously selected I2C
  *   frequency and slave address.
  *
+ * Returned Value:
+ *   Returns zero on success; a negated errno value on failure.
+ *
  *******************************************************************************/
 
 #ifdef CONFIG_I2C_TRANSFER
@@ -1148,8 +1170,11 @@ static void twi_hw_initialize(struct twi_dev_s *priv, unsigned int pid,
   /* Determine the maximum valid frequency setting */
 
   mck = BOARD_MCK_FREQUENCY;
-  DEBUGASSERT((mck >> 3) <= TWI_MAX_FREQUENCY);
 
+#ifdef SAMA5_HAVE_PMC_PCR_DIV
+  /* Select the optimal value for the PCR DIV field */
+
+  DEBUGASSERT((mck >> 3) <= TWI_MAX_FREQUENCY);
   if (mck <= TWI_MAX_FREQUENCY)
     {
       priv->frequency = mck;
@@ -1170,6 +1195,14 @@ static void twi_hw_initialize(struct twi_dev_s *priv, unsigned int pid,
       priv->frequency = (mck >> 3);
       regval          = PMC_PCR_DIV8;
     }
+
+#else
+  /* No DIV field in the PCR register */
+
+  priv->frequency     = mck;
+  regval              = 0;
+
+#endif /* SAMA5_HAVE_PMC_PCR_DIV */
 
   /* Set the TWI peripheral input clock to the maximum, valid frequency */
 
@@ -1208,7 +1241,7 @@ struct i2c_dev_s *up_i2cinitialize(int bus)
 #ifdef CONFIG_SAMA5_TWI0
   if (bus == 0)
     {
-      /* Set up TWI2 register base address and IRQ number */
+      /* Set up TWI0 register base address and IRQ number */
 
       priv       = &g_twi0;
       priv->base = SAM_TWI0_VBASE;
@@ -1283,6 +1316,33 @@ struct i2c_dev_s *up_i2cinitialize(int bus)
       handler    = twi2_interrupt;
       frequency  = CONFIG_SAMA5_TWI2_FREQUENCY;
       pid        = SAM_PID_TWI2;
+    }
+  else
+#endif
+#ifdef CONFIG_SAMA5_TWI3
+  if (bus == 3)
+    {
+      /* Set up TWI3 register base address and IRQ number */
+
+      priv       = &g_twi3;
+      priv->base = SAM_TWI3_VBASE;
+      priv->irq  = SAM_IRQ_TWI3;
+      priv->twi  = 3;
+
+      /* Configure PIO pins */
+
+      sam_configpio(PIO_TWI3_CK);
+      sam_configpio(PIO_TWI3_D);
+
+      /* Enable peripheral clocking */
+
+      sam_twi3_enableclk();
+
+      /* Select the interrupt handler, TWI frequency, and peripheral ID */
+
+      handler    = twi3_interrupt;
+      frequency  = CONFIG_SAMA5_TWI3_FREQUENCY;
+      pid        = SAM_PID_TWI3;
     }
   else
 #endif

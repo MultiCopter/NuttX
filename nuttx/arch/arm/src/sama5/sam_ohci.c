@@ -1394,12 +1394,12 @@ static int sam_ep0enqueue(struct sam_rhport_s *rhport)
   tdtail = sam_tdalloc();
   if (!tdtail)
     {
-      sam_edfree(rhport->ep0.ed);
+      sam_edfree(edctrl);
       irqrestore(flags);
       return -ENOMEM;
     }
 
-  rhport->ep0.ed = edctrl;
+  rhport->ep0.ed   = edctrl;
   rhport->ep0.tail = tdtail;
 
   /* ControlListEnable.  This bit is cleared to disable the processing of the
@@ -1466,7 +1466,7 @@ static int sam_ep0enqueue(struct sam_rhport_s *rhport)
  * Name: sam_ep0dequeue
  *
  * Description:
- *   Remove the ED for EP0 from the control ED list and posssibly disable control
+ *   Remove the ED for EP0 from the control ED list and possibly disable control
  *   list processing.
  *
  * Input Parameters:
@@ -1548,6 +1548,7 @@ static void sam_ep0dequeue(struct sam_rhport_s *rhport)
           sam_putreg(regval, SAM_USBHOST_CTRL);
         }
     }
+
   irqrestore(flags);
 
   /* Release any TDs that may still be attached to the ED. */
@@ -1567,6 +1568,9 @@ static void sam_ep0dequeue(struct sam_rhport_s *rhport)
 
   sam_tdfree(tdtail);
   sam_edfree(edctrl);
+
+  rhport->ep0.ed   = NULL;
+  rhport->ep0.tail = NULL;
 }
 
 /*******************************************************************************
@@ -1880,7 +1884,7 @@ static void sam_wdh_bottomhalf(void)
 
   /* Invalidate D-cache to force re-reading of the Done Head */
 
-# if 0 /* Apparently insufficient */
+#if 0 /* Apparently insufficient */
   cp15_invalidate_dcache((uintptr_t)&g_hcca.donehead,
                          (uintptr_t)&g_hcca.donehead + sizeof(uint32_t));
 #else
@@ -2510,7 +2514,7 @@ errout:
  * Input Parameters:
  *   drvr - The USB host driver instance obtained as a parameter from the call to
  *      the class create() method.
- *   ep - The endpint to be freed.
+ *   ep - The endpoint to be freed.
  *
  * Returned Values:
  *   On success, zero (OK) is returned. On a failure, a negated errno value is
@@ -2535,8 +2539,7 @@ static int sam_epfree(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep)
   /* There should not be any pending, real TDs linked to this ED */
 
   ed = eplist->ed;
-  DEBUGASSERT((ed->hw.headp & ED_HEADP_ADDR_MASK) ==
-              sam_physramaddr((uintptr_t)rhport->ep0.tail));
+  DEBUGASSERT((ed->hw.headp & ED_HEADP_ADDR_MASK) == ed->hw.tailp);
 
   /* We must have exclusive access to the ED pool, the bulk list, the periodic list
    * and the interrupt table.

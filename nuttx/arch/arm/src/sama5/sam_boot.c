@@ -188,11 +188,21 @@ static const struct section_mapping_s section_mapping[] =
   { SAM_NFCSRAM_PSECTION,  SAM_NFCSRAM_VSECTION,
     SAM_NFCSRAM_MMUFLAGS,  SAM_NFCSRAM_NSECTIONS
   },
+
 #ifndef CONFIG_PAGING /* Internal SRAM is already fully mapped */
   { SAM_ISRAM_PSECTION,    SAM_ISRAM_VSECTION,
     SAM_ISRAM_MMUFLAGS,    SAM_ISRAM_NSECTIONS
   },
 #endif
+
+#ifdef SAM_VDEC_PSECTION
+  /* If the memory map supports a video decoder (VDEC), then map it */
+
+  { SAM_VDEC_PSECTION,     SAM_VDEC_VSECTION,
+    SAM_VDEC_MMUFLAGS,     SAM_VDEC_NSECTIONS
+  },
+#endif
+
   { SAM_SMD_PSECTION,      SAM_SMD_VSECTION,
     SAM_SMD_MMUFLAGS,      SAM_SMD_NSECTIONS
   },
@@ -211,6 +221,14 @@ static const struct section_mapping_s section_mapping[] =
   { SAM_DAP_PSECTION,      SAM_DAP_VSECTION,
     SAM_DAP_MMUFLAGS,      SAM_DAP_NSECTIONS
   },
+
+#ifdef SAM_L2CC_PSECTION
+  /* If the memory map supports an L2 cache controller (L2CC), then map it */
+
+  { SAM_L2CC_PSECTION,     SAM_L2CC_VSECTION,
+    SAM_L2CC_MMUFLAGS,     SAM_L2CC_NSECTIONS
+  },
+#endif
 
 /* SAMA5 CS0 External Memories */
 
@@ -264,17 +282,33 @@ static const struct section_mapping_s section_mapping[] =
   },
 #endif
 
-/* SAMA5 Internal Peripherals */
+/* SAMA5 Internal Peripherals
+ *
+ * Naming of peripheral sections differs between the SAMA5D3 and SAMA5D4.
+ * There is nothing called SYSC in the SAMA5D4 memory map.  The third
+ * peripheral section is un-named in the SAMA5D4 memory map, but I have
+ * chosen the name PERIPHC for this usage.
+ */
 
   { SAM_PERIPHA_PSECTION, SAM_PERIPHA_VSECTION,
     SAM_PERIPHA_MMUFLAGS, SAM_PERIPHA_NSECTIONS
   },
+
   { SAM_PERIPHB_PSECTION, SAM_PERIPHB_VSECTION,
     SAM_PERIPHB_MMUFLAGS, SAM_PERIPHB_NSECTIONS
   },
+
+#ifdef SAM_PERIPHC_PSECTION
+  { SAM_PERIPHC_PSECTION, SAM_PERIPHC_VSECTION,
+    SAM_PERIPHC_MMUFLAGS, SAM_PERIPHC_NSECTIONS
+  },
+#endif
+
+#ifdef SAM_SYSC_PSECTION
   { SAM_SYSC_PSECTION,    SAM_SYSC_VSECTION,
     SAM_SYSC_MMUFLAGS,    SAM_SYSC_NSECTIONS
   },
+#endif
 
 /* LCDC Framebuffer.  This entry reprograms a part of one of the above
  * regions, making it non-cacheable and non-buffereable.

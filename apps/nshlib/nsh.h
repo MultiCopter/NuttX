@@ -146,19 +146,53 @@
 
 #ifdef HAVE_USB_CONSOLE
 
-/* The default USB console device minor number is 0*/
+/* The default USB console device minor number is 0 */
 
 #  ifndef CONFIG_NSH_USBDEV_MINOR
 #    define CONFIG_NSH_USBDEV_MINOR 0
 #  endif
 
-/* The default console device is always /dev/console */
+/* The default USB serial console device */
 
 #  ifndef CONFIG_NSH_USBCONDEV
-#    define CONFIG_NSH_USBCONDEV "/dev/console"
+#    if defined(CONFIG_CDCACM)
+#      define CONFIG_NSH_USBCONDEV "/dev/ttyACM0"
+#    elif defined(CONFIG_PL2303)
+#      define CONFIG_NSH_USBCONDEV "/dev/ttyUSB0"
+#    else
+#      define CONFIG_NSH_USBCONDEV "/dev/console"
+#    endif
 #  endif
 
 #endif /* HAVE_USB_CONSOLE */
+
+/* If a USB keyboard device is selected for NSH input then we need to handle
+ * some special start-up conditions.
+ */
+
+#undef HAVE_USB_KEYBOARD
+
+/* Check pre-requisites */
+
+#if !defined(CONFIG_USBHOST) || !defined(CONFIG_USBHOST_HIDKBD) || \
+    defined(HAVE_USB_CONSOLE)
+#  undef CONFIG_NSH_USBKBD
+#endif
+
+/* Check default settings */
+
+#if defined(CONFIG_NSH_USBKBD)
+
+/* Check for a USB HID keyboard in the configuration */
+
+#  define HAVE_USB_KEYBOARD 1
+
+/* The default keyboard device is /dev/kbda */
+
+#  ifndef NSH_USBKBD_DEVNAME
+#    define NSH_USBKBD_DEVNAME "/dev/kbda"
+#  endif
+#endif /* HAVE_USB_KEYBOARD */
 
 /* USB trace settings */
 

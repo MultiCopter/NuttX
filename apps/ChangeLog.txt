@@ -639,7 +639,7 @@
 	  exit.  So NSH was hanging in waitpid when msconn started even
 	  though msconn returned.  The USB MSC logic really should not use
 	  a pthread, but we are stuck with that for now.  The work-around
-	  is the msconn now daemonizes itself so that it so that the pthread
+	  is that msconn now daemonizes itself so that it so that the pthread
 	  is created in a different task group (2013-9-7).
 	* apps/system/usbmonitor:  The USB monitor has been extended so
 	  that it can be used with USB device or host trace data (2013-9-9).
@@ -898,7 +898,7 @@
 	  and in others 'shell.'  All changes to telnetd.  Noted by Pelle
 	  Windestam (2014-4-38).
 
-7.3 2014-xx-xx Gregory Nutt <gnutt@nuttx.org>
+7.3 2014-06-25 Gregory Nutt <gnutt@nuttx.org>
 
 	* apps/examples/serialblaster:  Update configuration an make logic in
 	  order to select that the serial blaster task priority and stack size.
@@ -913,9 +913,44 @@
 	  Ryan VanSickle (2014-5-8).
 	* apps/interpreters/prun and apps/include/interpreters/prun.h:  Broke out
 	  the P-code execution logic from apps/examples/pashello and moved it to
-	  these directorit where it can be used more generally (2014-5-9).
+	  these directory where it can be used more generally (2014-5-9).
 	* apps/system/prun and apps/include/interpreters/pexec_main.c:  Move the
 	  P-Code execution logic from apps/interpreters/prun to
 	  apps/system/prun; Add pexec_main.c which is an NSH built-in
 	  application that can be used to run P-Code programs from the NSH
 	  command line (2014-5-9).
+	* Several files: Convert all old-style variadic macros to the C99 form.
+	  Recent GCC changes tightens up that behavior and can cause some problems
+	  (at least for the IAR compiler for some reason).  See
+	  https://gcc.gnu.org/onlinedocs/cpp/Variadic-Macros.html#Variadic-Macros.
+	  Noted by Bob Grimes (2014-5-22).
+	* apps/system/cle:  CLE was not returning the terminating newline character.
+	  But reported by Max kriegleder; work-around reported by Lorenz Meier
+	  (2015-5-23).
+	* Misc changes due to moving nuttx/net/uip/uip-arp.h to nuttx/net/arp.h
+	  (2015-5-30).
+	* apps/examples/netpkt/:  A "raw" socket test from Lazlo Sitzer
+	  (2014-6-12).
+	* apps/system/hex2bin/:  A library and built-in task to convert from
+	  Intel HEX to binary format.  Untested on initial commit (2014-6-15).
+	* apps/system/hex2bin/: Appears to be functional but testing is still
+	  light (2014-6-16).
+	* apps/system/hex2bin/hex2mem_main: Add a variant application that will
+	  write Intel HEX files directly to memory (2014-6-16).
+	* netutils/webserver: httpd_fs_open() should return OK on success and
+	  ERROR on failure, not 1 and 0 (2014-6-23)
+
+7.4 2014-xx-xx Gregory Nutt <gnutt@nuttx.org>
+
+	* apps/system/mdio:  PHY tool from Daniel Lazlo Sizter (2014-6-27).
+	* apps/nshlib:  Networking logic modified to handler the case of SLIP
+	  transport.  From Max Neklyudov (2014-6-27).
+	* apps/nshlib:  if # appears on line, need to comment ignore additional
+	  commands on the line (2014-7-1).
+	* apps/netlib: Renamed all occurrences of uiplib to netlib.  Renamed
+	  files under netutils/uiplib/uip_*.c to netutils/netlib/netlib_*.c.
+	  Renamed all functions defined in netutils/netlib/ to begin with netlib_,
+	  instead of uip_. (2014-7-2).
+	* apps/nshlib/nsh_usbkeyboard.c:  Add a configuration to use a USB
+	  keyboard for the stdin device (2014-7-3).
+

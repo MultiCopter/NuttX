@@ -63,6 +63,12 @@
 #define BOARD_PCK_FREQUENCY        (sam_pck_frequency(BOARD_MAINOSC_FREQUENCY))
 #define BOARD_MCK_FREQUENCY        (sam_mck_frequency(BOARD_MAINOSC_FREQUENCY))
 
+/* On some SAMA5's, the clocking to peripherals may be divided down from MCK,
+ * but not for the SAMA5D3.
+ */
+
+#define BOARD_USART_FREQUENCY      BOARD_MCK_FREQUENCY
+
 #if defined(CONFIG_SAMA5_EHCI) || defined(CONFIG_SAMA5_OHCI) || \
     defined(CONFIG_SAMA5_UDPHS)
 
@@ -94,6 +100,12 @@
 #  define BOARD_USE_UPLL             1     /* Use UPLL for clock source */
 #  define BOARD_CKGR_UCKR_UPLLCOUNT  (15)  /* Maximum value */
 #  define BOARD_CKGR_UCKR_BIASCOUNT  (15)  /* Maximum value */
+
+/* REVISIT:  The divisor of 10 produces a rate that is too high. Division
+ * by 5, however, seems to work just fine.  No idea why?
+ */
+
+#  define BOARD_UPLL_OHCI_DIV        (5)   /* Divide by 5 */
 #endif
 
 /* ADC Configuration

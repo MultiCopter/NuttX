@@ -356,6 +356,12 @@ configs/olimex-lpc2378
   Linux or Cygwin.  STATUS: ostest and NSH configurations available.
   This port for the NXP LPC2378 was contributed by Rommel Marcelo.
 
+configs/olimex-stm32-h405
+  This port uses the Olimex STM32 H405 board and a GNU arm-nuttx-elf
+  toolchain* under Linux or Cygwin. See the http://www.olimex.com for
+  further information. This board features the STMicro STM32F405RGT6 MCU.
+  Contributed by Martin Lederhilger.
+
 configs/olimex-stm32-p107
   This port uses the Olimex STM32-P107 board (STM32F107VC) and a GNU arm-nuttx-elf
   toolchain* under Linux or Cygwin. See the https://www.olimex.com/dev/stm32-p107.html
@@ -473,6 +479,10 @@ configs/sama5d3-xplained
   This is the  port of NuttX to the Atmel SAMA5D3x-Xplained development board.
   This board features the Atmel SAMA5D36.  See
   http://www.atmel.com/devices/sama5d36.aspx.
+
+configs/sama5d4-ek
+  This is the  port of NuttX to the Atmel SAMA5D4-EK development board.
+  This board features the Atmel SAMA5D44.  See http://www.atmel.com.
 
 configs/samd20-xplained
   The port of NuttX to the Atmel SAMD20-Xplained Pro development board.  This
@@ -674,7 +684,7 @@ There are also common-separated value (CSV) values in the source try that
 provide information about symbols.  In particular:
 
   nuttx/syscall/syscall.csv - Describes the NuttX RTOS interface, and
-  nuttx/lib/lib.csv         - Describes the NuttX C library interface.
+  nuttx/lib/libc.csv        - Describes the NuttX C library interface.
 
 There is a tool at nuttx/tools/mksymtab that will use these CSV files as
 input to generate a generic symbol table.  See nuttx/tools/README.txt for

@@ -61,8 +61,9 @@
 #  include <pthread.h>
 #endif
 
-#include <nuttx/net/uip/uip.h>
-#include <apps/netutils/uiplib.h>
+#include <arpa/inet.h>
+
+#include <apps/netutils/netlib.h>
 #include <apps/netutils/httpd.h>
 
 #include "httpd.h"
@@ -246,7 +247,7 @@ static int handle_script(struct httpd_state *pstate)
 
               send(pstate->ht_sockfd, pstate->ht_file.data, pstate->ht_file.len, 0);
 
-              httpd_close(&pstate->ht_file);
+              (void)httpd_close(&pstate->ht_file);
             }
           else
             {
@@ -306,6 +307,7 @@ static int handle_script(struct httpd_state *pstate)
           pstate->ht_file.len  -= len;
         }
     }
+
   return OK;
 }
 #endif
@@ -335,8 +337,9 @@ static int send_headers(struct httpd_state *pstate, int status, int len)
 {
   const char *mime;
   const char *ptr;
-  char cl[32];
-  char s[128];
+  char contentlen[HTTPD_MAX_CONTENTLEN];
+  char header[HTTPD_MAX_HEADERLEN];
+  int hdrlen;
   int i;
 
   static const struct
@@ -380,7 +383,8 @@ static int send_headers(struct httpd_state *pstate, int status, int len)
 
   if (len >= 0)
     {
-      (void) snprintf(cl, sizeof cl, "Content-Length: %d\r\n", len);
+      (void)snprintf(contentlen, HTTPD_MAX_CONTENTLEN,
+                     "Content-Length: %d\r\n", len);
     }
 #ifndef CONFIG_NETUTILS_HTTPD_KEEPALIVE_DISABLE
   else
@@ -394,26 +398,32 @@ static int send_headers(struct httpd_state *pstate, int status, int len)
       /* TODO: here we "SHOULD" include a Retry-After header */
     }
 
-  i = snprintf(s, sizeof s,
-    "HTTP/1.0 %d %s\r\n"
-#ifndef CONFIG_NETUTILS_HTTPD_SERVERHEADER_DISABLE
-    "Server: uIP/NuttX http://nuttx.org/\r\n"
-#endif
-    "Connection: %s\r\n"
-    "Content-type: %s\r\n"
-    "%s"
-    "\r\n",
-    status,
-    status >= 400 ? "Error" : "OK",
-#ifndef CONFIG_NETUTILS_HTTPD_KEEPALIVE_DISABLE
-    pstate->ht_keepalive ? "keep-alive" : "close",
-#else
-    "close",
-#endif
-    mime,
-    len >= 0 ? cl : "");
+  /* Construct the header.
+   *
+   * REVISIT:  Wouldn't asprintf be a better option than a large stack
+   * array?
+   */
 
-  return send_chunk(pstate, s, i);
+  hdrlen = snprintf(header, HTTPD_MAX_HEADERLEN,
+                    "HTTP/1.0 %d %s\r\n"
+#ifndef CONFIG_NETUTILS_HTTPD_SERVERHEADER_DISABLE
+                    "Server: uIP/NuttX http://nuttx.org/\r\n"
+#endif
+                    "Connection: %s\r\n"
+                    "Content-type: %s\r\n"
+                    "%s"
+                    "\r\n",
+                    status,
+                    status >= 400 ? "Error" : "OK",
+#ifndef CONFIG_NETUTILS_HTTPD_KEEPALIVE_DISABLE
+                    pstate->ht_keepalive ? "keep-alive" : "close",
+#else
+                    "close",
+#endif
+                    mime,
+                    len >= 0 ? contentlen : "");
+
+  return send_chunk(pstate, header, hdrlen);
 }
 
 static int httpd_senderror(struct httpd_state *pstate, int status)
@@ -460,7 +470,7 @@ static int httpd_senderror(struct httpd_state *pstate, int status)
       ret = send_chunk(pstate, pstate->ht_file.data, pstate->ht_file.len);
 #endif
 
-      (void) httpd_close(&pstate->ht_file);
+      (void)httpd_close(&pstate->ht_file);
     }
 
   return ret;
@@ -514,7 +524,6 @@ static int httpd_sendfile(struct httpd_state *pstate)
         }
 
       ret = handle_script(pstate);
-
       goto done;
     }
 #endif
@@ -531,9 +540,7 @@ static int httpd_sendfile(struct httpd_state *pstate)
 #endif
 
 done:
-
   (void)httpd_close(&pstate->ht_file);
-
   return ret;
 }
 
@@ -782,7 +789,7 @@ static void single_server(uint16_t portno, pthread_startroutine_t handler, int s
   struct timeval tv;
 #endif
 
-  listensd = uip_listenon(portno);
+  listensd = netlib_listenon(portno);
   if (listensd < 0)
     {
       return;
@@ -831,7 +838,7 @@ static void single_server(uint16_t portno, pthread_startroutine_t handler, int s
 
       /* Handle the request. This blocks until complete. */
 
-      (void) httpd_handler((void*)acceptsd);
+      (void)httpd_handler((void*)acceptsd);
     }
 }
 #endif
@@ -855,7 +862,7 @@ int httpd_listen(void)
 #ifdef CONFIG_NETUTILS_HTTPD_SINGLECONNECT
   single_server(HTONS(80), httpd_handler, CONFIG_NETUTILS_HTTPDSTACKSIZE);
 #else
-  uip_server(HTONS(80), httpd_handler, CONFIG_NETUTILS_HTTPDSTACKSIZE);
+  netlib_server(HTONS(80), httpd_handler, CONFIG_NETUTILS_HTTPDSTACKSIZE);
 #endif
 
   /* the server accept loop only returns on errors */

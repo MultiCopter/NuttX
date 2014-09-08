@@ -7255,7 +7255,7 @@
 	  Ticket #26.  up_prioritize_irq should not be called if
 	  CONFIG_ARCH_IRQPRIO is not defined (2014-4-25).
 
-7.3 2014-xx-xx Gregory Nutt <gnutt@nuttx.org>
+7.3 2014-06-25 Gregory Nutt <gnutt@nuttx.org>
 
 	* arch/arm/src/sama5/sam_clockconfig.c:  Needed function sam_pmcwait()
 	  is needed when UDPHS, EHCI, or OHCI is configured but may not be
@@ -7327,3 +7327,339 @@
 	  noise environments or with rogue perpipherals.  Taken from the PX4 commit
 	  099b2017ccfa0fc7696f168db2a0c2e13fe5edbc by Tridge here:
 	  https://github.com/PX4/NuttX (2014-5-10).
+	* include/nuttx/video/rgbcolors.h:  Fix typo in several macros: RBG -> RGB.
+	  (2014-5-12).
+	* drivers/mtd/ramtron.c: Add support for Fujitsu MB85RS1MT part.  From
+	  Charles Ash (2014-5-12).
+	* configs/sam4e-ek/src/sam_ili9325.c:  Add an LCD driver for the SAM4E-EK
+	  board.  Untested on initial check-in (2014-5-13).
+	* configs/sam4e-ek/src/sam_ads7843e.c:  Add a touchscreen driver for the
+	  SAM4E-EK board.  Untested on initial check-in (2014-5-13).
+	* arch/arm/src/stm32/stm32_i2c_alt.c: Add an alternative I2C implementation
+	  for the STM32 F03 that works around errata in that part.  From Patrizio
+	  Simona (2014-5-14).
+	* arch/arm/src/sam34/sam_gpio.c:  Fix some SAM4E compiler errors when
+	  CONFIG_DEBUG_GPIO is enabled (2014-5-15).
+	* sched/sig_mqnotempty.c:  Test for a valid signal number is inverted; this
+	  function could not have been working correctly???  From eero.nurkkala
+	  (2014-5-20).
+	* arch/arm/src/stm32/stm32_lowputc.c:  Fix error in conditional
+	  compilation. From Sami PelKonen (2014-5-20).
+	* arch/*/src/* (several files):  Make sure that all references to
+	  up_prioritize_irq() are conditioned on CONFIG_ARCH_IRQPRIO.  Problem
+	  noted by Mike Smith (2014-05-20).
+	* drivers/wireless/cc3000/Kconfig: Correct SPI mode for CC3000 is CPOL=0
+	  CHPA=1. See http://processors.wiki.ti.com/index.php/CC3000_Serial_Port_Interface_(SPI)
+	  From Jussi Kivilinna (2014-5-21).
+	* drivers/wireless/cc3000/cc3000.c and include/nuttx/wireless/cc3000/include/cc3000_upif.h:
+	  Configuration has CC3000_SPI_MODE settings but source uses
+	  CONFIG_CC3000_SPIMODE. From Jussi Kivilinna (2014-5-21).
+	* drivers/wireless/cc3000/cc3000drv.c: unsoliced_thread does
+	  initialization of message queue, but main thread might block that
+	  thread from running and use the uninitialized message queue. The main
+	  thread must wait until unsolice_thread initializes the required
+	  structures before proceeding. From Jussi Kivilinna (2014-5-21).
+	* drivers/wireless/cc3000/cc3000.c: Fix build when POLL is enabled.
+	  From Jussi Kivilinna (2014-5-21).
+	* arch/arm/include/armv7-m/irq.h:  Change bne to bne.n in irqrestore()
+	  (2014-5-22).
+	* Many files: Convert all old-style variadic macros to the C99 form.
+	  Recent GCC changes tightens up that behavior and can cause some problems
+	  (at least for the IAR compiler for some reason).  See
+	  https://gcc.gnu.org/onlinedocs/cpp/Variadic-Macros.html#Variadic-Macros.
+	  Noted by Bob Grimes (2014-5-22).
+	* configs/viewtool-stm32f107/nsh: Configuration refreshed (2014-5-23).
+	* arch/arm/src/stm32/stm32_i2c_alt.c: Final driver from Max Kriegleder et al.
+	  Reduces footprint and fixes a bug.  (2014-5-23).
+	* tools/configure.sh:  In-place SED edit messes up permissions on windows.
+	  From Hannes Delago (2014-5-25).
+	* include/nuttx/mtd/mtd.h:  Needs forward reference to struct spi_dev_s.
+	  (2014-5-25).
+	* arch/arm/src/stm32/stm32_i2c.c and stm32_i2c_alt.c:  Back out PX4 fixes
+	  that were reverted in the PX4 repositories (2014-5-25).
+	* sched/Kconfig:  CONFIG_START_YEAR/MONTH/DAY are not required if the
+	  RTC is enabled (2014-5-26).
+	* arch/arm/src/stm32/stm32_rtcc.c:  Add retry logic to RTC initialization.
+	  It sometimes takes longer for the RTC to initialize, at least as noted
+	  on an F2 part.  From dlsitzer (2014-5-27).
+	* libc/stdio/lib_snprintf.c:  If the size passed to snprintf() is zero,
+	  then snprintf() must write nothing, but instead return the size of the
+	  buffer needed to hold the entire string.  From Sami Pelkonen (2014-5-30).
+	* net/arp:  Move arp related files from net/uip to net/arp.  Files renamed
+	  with arp_ prefix (2014-5-30).
+	* include/nuttx/net/arp.h and net/arp/arp_timer.c:  Moved
+	  include/nuttx/net/uip/uip-arp.h to include/nuttx/net/arp.h; moved
+	  net/net_arptimer to arp/arp_timer.c. (2014-5-30).
+	* net/igmp:  Moved IGMP files from net/uip to net/igmp (2014-5-30).
+	* net/icmp:  Moved ICMP files from net/uip to net/icmp (2014-5-30).
+	* net/uip/uip_tcptimer.c:  NET: Notify upper layer when TIME_WAIT or
+	  FIN_WAIT_2 timeout occurs. Otherwise connections possibly won't get
+	  freed. From Max Holtzberg (2014-6-2).
+	* TCP fallback allocation: Added all states in which the connections are
+	  about to be closed.  Fallback mechanism is disabled when SO_LINGER is
+	  enabled to prevent deadlocks in netclose_disconnect().  From Max Holtzberg
+	  (2014-6-2).
+	* configs/olimex-stm32_h405:  Support for the Olimex STM32 H405 board
+	  contributed by Martin Lederhilger (2014-6-3).
+	* net/arp/Make.defs:  Fix an error introduced recently in the net/ build
+	  (2014-6-3).
+	* net/iob:  Add generic I/O buffering.  Not currently used by anything.
+	  (2014-6-4).
+	* arch/arm/include/sama5 and arch/arm/src/sama5:  Basic framework to
+	  support the SAMA5D4 family.  Incomplete on initial check-in (2014-6-3).
+	* arch/arm/src/sama5/chip/sam_xdmac.h: Beginning of XDMAC register
+	  definition header file (incomplete) (2014-6-4).
+	* arch/arm/src/sama5/chip/sam_l2cc.h:  Add SAMA5D4 L2CC register definition
+	  header file (incomplete on initial check-in) (2014-6-5).
+	* drivers/usbdev/cdcacm.c:  Reset RX head to avoid resending last serial
+	  data when USB cable disconnected/re-connected.  From Lizhuoyi (2014-6-6).
+	* drivers/usbdev/pl2303.c:  Same change cloned for PL2303 (2014-6-6).
+	* arch/arm/src/lpc2378:  Fix several typos. From Lizhuoyi (2014-6-6).
+	* arch/arm/src/lpc17xx/lpc17_gpdma.c:  Fix an error when DMA is
+	  started:  The read-modify-write fails when the DMA is started.  This
+	  is because the value read is not the same as the value set (on write
+	  it is the number of transfers to do; on read it is the number of
+	  transfers completed).  From Lizhuoyi (2014-6-6).
+	* configs/sama5d4-ek:  Initial board support for the SAMA5D4-EK board.
+	  This initial check-in is basically the SAMA5D3-Xplained board support
+	  with appropriate name changes (2014-6-6).
+	* stm32/arch/arm/src/stm32_serial.c:  Handle configuration for the
+	  case of 8-bit data with parity.  From Freddie Chopin (2014-6-11).
+	* binfmt/libelf/elf.c:  Fix a compilation error when CONFIG_ELF_DUMPBUFFER
+	  is defined.  From Pelle Windestam (2014-6-12).
+	* net/, include/nutt/net, and include/netpacket:  Add support for "raw"
+	  sockets.  From Lazlo Sitzer (2014-6-12).
+	* arch/arm/src/sama5:  Add SAMA5D4 XDMAC driver.  Initial check-in is
+	  just the DMAC driver with a few naming changes (2014-6-12).
+	* configs/sama5d4x-ek/ramtest:  Add an SDRAM test configuration
+	  (2014-6-14).
+	* libc/stdio/lib_libsnoflush.c, lib_memsistream.c, and lib_memsostream.c:
+	  Add support for seekable memory streams (2014-6-14).
+	* libc/stdio/lib_rawsistream.c, and lib_rawsostream.c:  Add support for
+	  seekable raw streams (2014-6-14).
+	* libc/stdio/lib_stdsistream.c, and lib_stdsostream.c:  Add support for
+	  seekable standard streams (2014-6-14).
+	* configs/sam4x-xplained*/src/sam_buttons.c: Button interrupts not being
+	  disabled after being detached.  (2014-6-15).
+	* binfmt/binfmt_exec.c:  Fix a critical error in exec(); argv was not
+	  being passed (2014-6-15).
+	* arch/arm/src/sama5/sam_dmac.h:  Fix some critical typos in the SAMA5D3
+	  DMA definitions (2014-6-17).
+	* nuttx/net/net_send_unbuffered.c: Notify the device driver of the
+	  availability of TX data.  From Daniel Lazlo Sitzer (2014-6-18).
+	* net/net_close.c, net_send_unbuffered.c, socket.c, and uip_poll.c:
+	  Various fixes for raw sockets from Daniel Lazlo Sitzer: (1) properly
+	  free the socket in psock_close(), (2)  socket() returns failure when
+	  there is no free socket/connection, and (3) Set number of bytes to
+	  transmit is set in the uip_driver_s instance (2014-6-18).
+	* net/tcp:  Move all TCP files from net/uip to net/tcp (2014-6-18).
+	* net/udp:  Move all UDP files from net/uip to net/udp (2014-6-18).
+	* net/pkt:  Move all AF_PACKET files from net/uip to net/pkt (2014-6-18).
+	* net/Kconfig:  Add option to select CONFIG_NET_GUARDSIZE (2014-6-18).
+	* net/net_send_buffered.c:  Add checks from buffer allocation failures.
+	  from Max/Himax (2014-6-19).
+	* tools/mkfsdata.pl:  Apparently, the trailing the 0x00 in http server
+	  files is seen as a bug in javascript and images.  From Max/Himax
+	  (2014-6-19).
+	* net/ and include/nutt/net (many files):  Conversion of the TCP
+	  write buffering logic to use I/O buffer chains (not tested on initial
+	  check-in) (2014-6-22).
+	* include/time.h and sched/clock_gettime.c:  Fix typo in conditional
+	  compilation:  CONFIG_CLOCK_MONOTONIC vs. CLOCK_MONOTONIC.  From Manuel
+	  Stühn (2014-6-23).
+	* arch/avr/Kconfig and arch/avr/src/avr32/Kconfig:  Fix typos in
+	  Kconfig files from Stefan Sperling (2014-6-23).
+	* net/net_send_unbuffered.c:  Remove some spurious white space from
+	  field selectors.  SourceForge ticket #42 (2014-6-23).
+	* arch/arm/src/lpc17xx and configs/lpcexpresso-lpc1768:  Added support
+	  for the lpcxpresso's rtc handler, adc, dac, timers, pwm and mcpwm
+	  drivers.  From Max (himax) (2014-6-23).
+	* net/tcp/Kconfig:  Cannot enable bother TCP write buffering AND raw
+	  packet sockets.  This should not logically be the case, but is because
+	  the implementations are presently too coupled.  The logic packet
+	  socket logic in net/net_send_unbuffered.c needs to be broken out into
+	  a separate file so that write buffered TCP and packet socket transfers
+	  can co-exist (2014-6-23).
+	* net/uip/uip_pktsend.c:  Move the logic that copies data into the
+	  device buffer from net/net_send_unbuffered.c to net/uip/uip_pktsend.c.
+	  This makes the packet socket design more consistent with TCP and UDP
+	  (2014-6-23).
+	* net/: Separate net/net_send_buffered.c and net/net_send_unbuffered.c
+	  to net/tcp/tcp_send_buffered.c, net/tcp/tcp_send_unbuffered.c, and
+	  pkt/pkt_send.c (2014-6-24).
+	* include/net/if.h and /net/arp/arp_inout.c:  Suppress ARP requests on
+	  data sent from packet sockets (2014-6-24).
+	* include/nuttx/net/netconfig.h: Move include/nuttx/net/uip/uipopt.h to
+	  include/nuttx/net/netconfig.h (2014-6-24).
+	* include/nuttx/net/netdev.h: Move include/nuttx/net/uip/uip-arch.h to
+	  include/nuttx/net/netdev.h (2014-6-24).
+	* include/nuttx/net/tcp.h: Move include/nuttx/net/uip/uip-tcp.h to
+	  include/nuttx/net/tcp.h (2014-6-24).
+	* include/nuttx/net/udp.h: Move include/nuttx/net/uip/uip-udp.h to
+	  include/nuttx/net/udp.h (2014-6-24).
+	* include/nuttx/net/pkt.h: Move include/nuttx/net/uip/uip-pkt.h to
+	  include/nuttx/net/pkt.h (2014-6-24).
+	* include/nuttx/net/icmp.h: Move include/nuttx/net/uip/uip-icmp.h to
+	  include/nuttx/net/icmp.h (2014-6-24).
+	* include/nuttx/net/igmp.h: Move include/nuttx/net/uip/uip-igmp.h to
+	  include/nuttx/net/igmp.h (2014-6-24).
+	* include/nuttx/net/ip.h: Move include/nuttx/net/uip/uip-ipopt.h to
+	  include/nuttx/net/ip.h (2014-6-24).
+	* include/nuttx/net/uip.h: Move include/nuttx/net/uip/uip.h to
+	  include/nuttx/net/uip.h (2014-6-24).
+	* net/uip/uip.h: Rename net/uip/uip_internal.h to net/uip/uip.h
+	  (2014-6-24).
+	* net/iob:  Add support for throttling read-ahead buffering if the
+	  read-ahead buffering is competing with write buffering for I/O
+	  buffers (2014-6-24).
+	* net/: Many files changed.  Convert existing TCP read-ahead logic
+	  to use I/O buffer chains (2014-6-24).
+	* net/: Clean up all TCP and UDP related naming (204-6-24).
+	* net/: Clean up all ICMP, IGMP, ARP, and PKT related naming
+	  (204-6-25).
+	* arch/arm/src/sam34 and include/sam34:  Add support for the SAM4CM
+	  family.  From Max Neklyudov (2014-6-25).
+
+7.4 2014-xx-xx Gregory Nutt <gnutt@nuttx.org>
+
+	* arch/arm/src/stm32/stm32_i2c.c:  Fix missing configuration of
+	  GPIO pins in I2C driver.  Fix from Alex D. (2014-6-25).
+	* NET: Fix an include file ordering problem when CONFIG_NET_STATISTICS=y.
+	  (2014-6-26).
+	* include/nuttx/net/netstats.h: Move statistcs from uip.h to new netstats.h
+	  to remove nasty circular inclusion problem (2014-6-26).
+	* arch/arm/src/sama5:  Add logic to redirect all SAMA5D4 interrupts to
+	  the AIC (2014-6-26).
+	* net/route: Move routing table functions to net/route (2014-6-26).
+	* net/utils: Move some files into net/utils (2014-6-26).
+	* net/:  Repartition initialization logic so that net/uip is at the bottom
+	  of the food chain, instead of at the top.
+	* apps/include/hex2bin.h:  The hex2bin library did not build with
+	  debug disabled (2014-6-26).
+	* configs/sama5d4-ek/dramboot and src/dram_main.c:  Add a boot loader that
+	  runs from ISRAM and loads an Intel HEX file into DRAM (2014-6-26).
+	* configs/sama5d4-ek/nsh and scripts/: Setup the SAMA5D4-EK NSHi
+	  configuration to use the DRAMBOOT loader by default (2014-6-26).
+	* binfmt: Various changes associated with symbol tables.  Most from Pelle
+	  Windestam (2014-6-27).
+	* Networking: Add network device ioctl to access PHY registers. From Daniel
+	  Lazlo Sitzer (2014-6-27).
+	* net/netdev:  Move net/netdev*.c to net/netdev/netdev*.c (2014-6-27).
+	* arch/arm/src/sam34/chip/sam4cm_ipc.h:  Add SAM4CM IPC register header
+	  file.  From Max Neklyudov (2104-6-27).
+	* arch/arm/src/sam34:  Various fixes PMC and clock configuration for the
+	  SAM4CM port from Max Neklyudov (2104-6-27).
+	* configs/sama5d4-ek/src/dram_main.c: SAMA5D4:  Bootloader needs to flush
+	  D-Cache to memory before disabling the caches (2014-6-27).
+	* net/Makefile: Fix a Make.defs inclusion omitted in a previous check-in
+	  (2014-6-17).
+	* net/utils:  Move net/uip/uip_chksum.c to net/utils/net_chksum.c
+	  (2014-6-17).
+	* configs/sama5d4-ek/at25boot and src/at25_main.c:  Add a configuration
+	  that will load a bootloader into AT25 Serial FLASH (2014-6-28).
+	* libc/math: Change double_t to double in rint().  Add rintf() and rintl()
+	  while we are at it (2014-6-28).
+	* net/iob: Fix some errors in recent network I/O buffering when stack runs
+	  from interrupt level.  Reported by Manuel Stühn (2014-6-28).
+	* net/sockets:  Create the net/sockets directory and hook it into the
+	  build system.  Move all socket-related C files into net/socket.  Move
+	  net/net.h to net/socket/socket.h (2014-6-28).
+	* net/ipv6:  Move IPv6 files from net/uip to net/ipv6 (2014-6-28).
+	* net/devif:  Rename net/uip to net/devif.  Rename uip/uip.h to
+	  devif/devif.h (2014-6-28).
+	* net/devif: Rename many functions in net/devif from uip_* to devif_*
+	  (2014-6-28).
+	* configs/sama5d4-ek/src/nsh:  The SAMA5D4-EK NSH configuration now
+	  supports the RTC by default (2014-6-29).
+	* arch/arm/src/sama5/Kconfig and sam_hsmci.c:  Add configuration to
+	  assign an XDMAC channel to an HSMCI (2014-6029).
+	* Various fixes for networking and tiny webserver from Max (2014-6-29).
+	* SAMA5: Various fixes related to DMA in order to get the HSMCI
+	  driver to build for the SAMA5D4 (2014-6-29).
+	* SAMA5D4-EK: Fix HSMCI card-detect pin selection (2014-6-29).
+	* net/:  Still renaming, mostly uip_* to net_* (2014-6-29).
+	* arch/arm/src/stm32/stm32_i2c.c and stm32_i2c_alt.c, and
+	  libc/time/lib_daysbeforemonth.c:  Make variable definitions
+	  'static const' when possible to save RAM usage.  From Kosma
+	  Moczek (2014-6-30).
+	* include/stdint.h: Correct naming of [U]INT_LEASTn_{MAX|MIN}
+	  and [U]INT_FASTn{MAX|MIN}. From Kosma Moczek (2014-6-30). 
+	* drivers/mtd/mtd-config:  Extend erase block size to 18-bits in
+	  order (decrease block size to 14-bits) to handle parts with large
+	  erase blocks. From Kosma Moczek (2014-6-30). 
+	* drivers/analog/adc.c: Remove empty ADC write method. From Kosma
+	  Moczek (2014-6-30).
+	* arch/arm/src/stm32/stm32_serial.c: Unconfigure GPIO pins when
+	  closing a serial port to prevent back effects from back-powering on
+	  the TX pin. From Kosma Moczek (2014-6-30)
+	* arch/arm/src/stm32/Kconfig:  Move temperature ranges from chip
+	  selection configuration prompts. Reorder MCUs in choice menu;
+	  remove duplicates. Add support for the STM32F103RC and RD.  From
+	  Kosma Moczek (2014-6-30)
+	* configs/sam4s-xplained-pro:  Correct description of LEDs and
+	  usage. From Kosma Moczek (2014-6-30)
+	* include/unistd.h: Some POSIX_* and _POSIX_* macros are defined
+	  without value, whereas (as far as I can tell) the newer versions
+	  of the standard require them to have the value corresponding to
+	  the standard version implemented, like 200809L. Are the any plans
+	  to clean this up? For now I've put together a quick patch that
+	  defines those macros to 1, consistent with the rest of unistd.h.
+	  From Kosma Moczek (2014-6-30)
+	* arch/arm/src/sama5/sam_memories.c:  Fix some logic in conversion
+	  of physical and virtual DRAM addresses when running out of DRAM.  This
+	  is an important bug fix for the SAMA5D3 and 4 when running out of
+	  DRAM (2014-6-30).
+	* arch/arm/src/sama5/sam_pio.c:  Another *critical* SAMA5D3 and 4 bug
+	  fix:  PIO clocking must be enabled for all input pins or else the
+	  value that is read never changes. (2014-6-30).
+	* net/:  Many more functions renamed to follow new modularization of
+	  the networking code.  This is part of an ongoing repartitioning
+	  effort and there is still more to be done.  There will be no additional
+	  notations in this ChangeLog until the renaming is complete (2014-6-30).
+	* arch/arm/src/sam34/sam_emac.c, sama5/sam_emaca.c, sam_emacb.c, and
+	  sam_gmac.c:  Fix cloned error:  Wrong bits being cleared before ORing
+	  in new bits (2014-7-1).
+	* drivers/syslog/ramlog.c: syslog_putc needs to set the errno and
+	  return EOF on a failure (2014-7-1).
+	* SAM3/4 and SAMA5 Ethernet:  Fix an error in the function that
+	  determines the number of free TX descriptors.  This is an important
+	  bugfix on busy networks (2014-7-2).
+	* SAM4 AES driver.  Contributed by Max Neklyudov (2014-7-3).
+	* crypto/ and include/crypto:  Beginnings of a crypto/ subsystem from
+	  Max Neklyudov (2014-7-3).
+	* arch/arm/src/stm32 and fs/procfs:  Add a procfs entry to show the
+	  state of the CCM heap usage.  From Pelle Winderstam (2013-7-3).
+	* SAMA5 OHCI: Fix an error in a DEBUGASSERT statement.  Caused assertion
+	  to fire inappropriately when a low- or full-speed device was removed
+	  and CONFIG_DEBUG=y (2013-7-3).
+	* SmartFS.  Fix for a bug that would show up if CONFIG_MTD_BYTE_WRITE
+	  was not selected and the SMART sector size was larger than the mt
+	  device's block size (like it would be if using SMARTFS on larger
+	  flash devices).  From Ken Pettit (2014-7-3).
+	* tools/mkdeps.c: NAME_MAX not available on SunOS; use FILENAME_MAX
+	  or MAXNAMELEN.  Noted by Douglas Beattie (2014-7-4).
+	* drivers/mtd/smart.c: Increase some variables from uint16_t to uint32_t
+	  to handle larger device sizes.  From Ken Pettit (2014-7-4).
+	* SAMA5 OHCI: Pointers to allocated port values were not being nullified
+	  after being deallocated.  This caused some assertions to fire when
+	  debug was enabled (2014-7-4).
+	* include/nuttx/net/ip.h and ipopt.h:  ip.h renamed ipopt.h.  Moved
+	  parts of uip.h to net.h. Renamed the rest of uip.h to ip.h.  Removed
+	  all includes of uip.h; added includes of ip.h wherever needed.
+	  Tried to fix problems of the now missing sneak inclusions because
+	  uip.h was removed.  There are probably a few of these that were
+	  missed! (2014-7-4).
+	* drivers/input/mxt.c/h and include/nuttx/input/mxt.h:  Add very basic
+	  support for the Atmel maXTouch touchscreen controller (2014-7-5).
+	* net/*/*.h: Start moving the private definitions from header files
+	  at include/nuttx/net to the corresponding header file under net/.
+	  So far pkt.h, upd.h, and igmp.h have been sanitized.  Still a few
+	  to go (2014-7-5)
+	* configs/sama5d4-ek/src/sam_maxtouch.c:  Add board support for the
+	  maXTouch touchscreen controller (2014-7-5).
+	* net/*/*.h: Finish moving the private definitions from header files
+	  at include/nuttx/net to the corresponding header file under net/.
+	  This additional header files have been sanitized: arp.h, icmp.h, tcp.h
+	  (2014-7-6)
+	* net/: Add a few missing configuration options to the Kconfig files
+	  (2014-7-8).

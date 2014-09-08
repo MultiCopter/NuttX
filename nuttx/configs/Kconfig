@@ -392,6 +392,18 @@ config ARCH_BOARD_OLIMEX_STRP711
 		further information.  STATUS: Configurations for the basic OS test and NSH
 		are complete and verified.
 
+config ARCH_BOARD_OLIMEX_STM32H405
+	bool "Olimex STM32 H405 board"
+	depends on ARCH_CHIP_STM32F405RG
+	select ARCH_HAVE_LEDS
+	select ARCH_HAVE_BUTTONS
+	select ARCH_HAVE_IRQBUTTONS
+	---help---
+		This port uses the Olimex STM32 H405 board and a GNU arm-nuttx-elf
+		toolchain* under Linux or Cygwin. See the http://www.olimex.com for
+		further information. This board features the STMicro STM32F405RGT6
+		MCU.
+
 config ARCH_BOARD_OLIMEX_STM32P107
 	bool "Olimex STM32 P107 board"
 	depends on ARCH_CHIP_STM32F107VC
@@ -562,6 +574,15 @@ config ARCH_BOARD_SAMA5D3_XPLAINED
 	select ARCH_HAVE_IRQBUTTONS
 	---help---
 		The port of NuttX to the Atmel SAMA5D3 Xplained development board.
+
+config ARCH_BOARD_SAMA5D4_EK
+	bool "Atmel SAMA5D4-EK development board"
+	depends on ARCH_CHIP_ATSAMA5D44
+	select ARCH_HAVE_LEDS
+	select ARCH_HAVE_BUTTONS
+	select ARCH_HAVE_IRQBUTTONS
+	---help---
+		The port of NuttX to the Atmel SAMA5D4-EK development board
 
 config ARCH_BOARD_SAMD20_XPLAINED
 	bool "Atmel SAMD20-Xplained Pro development board"
@@ -970,6 +991,7 @@ config ARCH_BOARD
 	default "olimex-lpc1766stk"   if ARCH_BOARD_LPC1766STK
 	default "olimex-lpc2378"      if ARCH_BOARD_OLIMEXLPC2378
 	default "olimex-lpc-h3131"    if ARCH_BOARD_OLIMEX_LPC_H3131
+	default "olimex-stm32-h405"   if ARCH_BOARD_OLIMEX_STM32H405
 	default "olimex-stm32-p107"   if ARCH_BOARD_OLIMEX_STM32P107
 	default "olimex-stm32-p207"   if ARCH_BOARD_OLIMEX_STM32P207
 	default "olimex-strp711"      if ARCH_BOARD_OLIMEX_STRP711
@@ -987,6 +1009,7 @@ config ARCH_BOARD
 	default "rgmp"                if ARCH_BOARD_RGMP
 	default "sama5d3x-ek"         if ARCH_BOARD_SAMA5D3X_EK
 	default "sama5d3-xplained"    if ARCH_BOARD_SAMA5D3_XPLAINED
+	default "sama5d4-ek"          if ARCH_BOARD_SAMA5D4_EK
 	default "samd20-xplained"     if ARCH_BOARD_SAMD20_XPLAINED
 	default "sam3u-ek"            if ARCH_BOARD_SAM3UEK
 	default "sam4e-ek"            if ARCH_BOARD_SAM4EEK
@@ -1196,6 +1219,9 @@ endif
 if ARCH_BOARD_OLIMEX_LPC_H3131
 source "configs/olimex-lpc-h3131/Kconfig"
 endif
+if ARCH_BOARD_OLIMEX_STM32H405
+source "configs/olimex-stm32-h405/Kconfig"
+endif
 if ARCH_BOARD_OLIMEX_STM32P107
 source "configs/olimex-stm32-p107/Kconfig"
 endif
@@ -1243,6 +1269,9 @@ source "configs/sama5d3x-ek/Kconfig"
 endif
 if ARCH_BOARD_SAMA5D3_XPLAINED
 source "configs/sama5d3-xplained/Kconfig"
+endif
+if ARCH_BOARD_SAMA5D4_EK
+source "configs/sama5d4-ek/Kconfig"
 endif
 if ARCH_BOARD_SAMD20_XPLAINED
 source "configs/samd20-xplained/Kconfig"

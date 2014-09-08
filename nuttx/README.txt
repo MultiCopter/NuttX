@@ -1008,6 +1008,10 @@ nuttx
  |   |   `- README.txt
  |   |- olimex-lpc-h3131/
  |   |   `- README.txt
+ |   |- olimex-stm32-h405/
+ |   |   `- README.txt
+ |   |- olimex-stm32-p107/
+ |   |   `- README.txt
  |   |- olimex-stm32-p207/
  |   |   `- README.txt
  |   |- olimex-strp711/
@@ -1035,6 +1039,8 @@ nuttx
  |   |- sama5d3x-ek/
  |   |   `- README.txt
  |   |- sama5d3-xplained/
+ |   |   `- README.txt
+ |   |- sama5d4-ek/
  |   |   `- README.txt
  |   |- samd20-xplained/
  |   |   `- README.txt
@@ -1145,6 +1151,8 @@ nuttx
  |- libxx/
  |   `- README.txt
  |- mm/
+ |   `- README.txt
+ |- net/
  |   `- README.txt
  |- syscall/
  |   `- README.txt

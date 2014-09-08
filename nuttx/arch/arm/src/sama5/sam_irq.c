@@ -54,12 +54,14 @@
 #  include "sam_pio.h"
 #endif
 
+#include "chip.h"
 #include "mmu.h"
 #include "cache.h"
 #include "sctlr.h"
 #include "chip/sam_aic.h"
 #include "chip/sam_matrix.h"
 #include "chip/sam_aximx.h"
+#include "chip/sam_sfr.h"
 
 #include "sam_irq.h"
 
@@ -90,8 +92,21 @@ extern uint32_t _vector_end;   /* End+1 of vector block */
 
 static const uint8_t g_srctype[SCRTYPE_NTYPES] =
 {
- 0, 0, 1, 1, 2, 3
+  0, 0, 1, 1, 2, 3
 };
+
+/* This is an arry of bit maps that can be used to quickly determine is the
+ * peripheral identified by its PID is served by H64MX or H32MX.  Then the
+ * appropriate MATRIX SPSELR register can be consulted to determine if the
+ * peripheral interrupts are secured or not.
+ */
+
+#if defined(CONFIG_SAMA5_SAIC)
+static const uint32_t g_h64mxpids[3] =
+{
+  H64MX_SPSELR0_PIDS, H64MX_SPSELR1_PIDS, H64MX_SPSELR2_PIDS
+};
+#endif
 
 /****************************************************************************
  * Private Functions
@@ -106,37 +121,57 @@ static const uint8_t g_srctype[SCRTYPE_NTYPES] =
  ****************************************************************************/
 
 #if defined(CONFIG_DEBUG_IRQ)
-static void sam_dumpaic(const char *msg, int irq)
+static void sam_dumpaic(const char *msg, uintptr_t base, int irq)
 {
   irqstate_t flags;
 
   flags = irqsave();
-  lldbg("AIC (%s, irq=%d):\n", msg, irq);
+  lldbg("AIC (%s, base=%08x irq=%d):\n", msg, base, irq);
 
   /* Select the register set associated with this irq */
 
-  putreg32(irq, SAM_AIC_SSR);
+  putreg32(irq, base + SAM_AIC_SSR_OFFSET);
 
   /* Then dump all of the (readable) register contents */
 
   lldbg("  SSR: %08x  SMR: %08x  SVR: %08x  IVR: %08x\n",
-        getreg32(SAM_AIC_SSR),  getreg32(SAM_AIC_SMR),
-        getreg32(SAM_AIC_SVR),  getreg32(SAM_AIC_IVR));
+        getreg32(base + SAM_AIC_SSR_OFFSET),
+        getreg32(base + SAM_AIC_SMR_OFFSET),
+        getreg32(base + SAM_AIC_SVR_OFFSET),
+        getreg32(base + SAM_AIC_IVR_OFFSET));
   lldbg("  FVR: %08x  ISR: %08x\n",
-        getreg32(SAM_AIC_FVR),  getreg32(SAM_AIC_ISR));
+        getreg32(base + SAM_AIC_FVR_OFFSET),
+        getreg32(base + SAM_AIC_ISR_OFFSET));
   lldbg("  IPR: %08x       %08x       %08x       %08x\n",
-        getreg32(SAM_AIC_IPR0), getreg32(SAM_AIC_IPR1),
-        getreg32(SAM_AIC_IPR2), getreg32(SAM_AIC_IPR3));
+        getreg32(base + SAM_AIC_IPR0_OFFSET),
+        getreg32(base + SAM_AIC_IPR1_OFFSET),
+        getreg32(base + SAM_AIC_IPR2_OFFSET),
+        getreg32(base + SAM_AIC_IPR3_OFFSET));
+
+  /* SAMA5D4 does not have the FFSR register */
+
+#if defined(SAM_AIC_FFSR)
   lldbg("  IMR: %08x CISR: %08x  SPU: %08x FFSR: %08x\n",
-        getreg32(SAM_AIC_IMR),  getreg32(SAM_AIC_CISR),
-        getreg32(SAM_AIC_SPU),  getreg32(SAM_AIC_FFSR));
+        getreg32(base + SAM_AIC_IMR_OFFSET),
+        getreg32(base + SAM_AIC_CISR_OFFSET),
+        getreg32(base + SAM_AIC_SPU_OFFSET),
+        getreg32(base + SAM_AIC_FFSR_OFFSET));
+#else
+  lldbg("  IMR: %08x CISR: %08x  SPU: %08x\n",
+        getreg32(base + SAM_AIC_IMR_OFFSET),
+        getreg32(base + SAM_AIC_CISR_OFFSET),
+        getreg32(base + SAM_AIC_SPU_OFFSET));
+#endif
+
   lldbg("  DCR: %08x WPMR: %08x WPSR: %08x\n",
-        getreg32(SAM_AIC_DCR),  getreg32(SAM_AIC_WPMR),
-        getreg32(SAM_AIC_WPSR));
+        getreg32(base + SAM_AIC_DCR_OFFSET),
+        getreg32(base + SAM_AIC_WPMR_OFFSET),
+        getreg32(base + SAM_AIC_WPSR_OFFSET));
+
   irqrestore(flags);
 }
 #else
-#  define sam_dumpaic(msg, irq)
+#  define sam_dumpaic(msg, base, irq)
 #endif
 
 /****************************************************************************
@@ -190,7 +225,7 @@ static inline size_t sam_vectorsize(void)
 
 static uint32_t *sam_spurious(int irq, uint32_t *regs)
 {
-  /* This is probably irrevelant since true vectored interrupts are not used
+  /* This is probably irrelevant since true vectored interrupts are not used
    * in this implementation.  The value of AIC_IVR is ignored.
    */
 
@@ -210,15 +245,160 @@ static uint32_t *sam_spurious(int irq, uint32_t *regs)
 
 static uint32_t *sam_fiqhandler(int irq, uint32_t *regs)
 {
-  /* This is probably irrevelant since FIQs are not used in this
-   * implementation.
+  /* Dispatch the FIQ */
+
+  return arm_doirq(SAM_IRQ_FIQ, regs);
+}
+
+/****************************************************************************
+ * Name: sam_aic_issecure
+ *
+ * Description:
+ *   Return true if the peripheral secure.
+ *
+ * Input Parameter:
+ *   PID = IRQ number
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_SAMA5_SAIC)
+static bool sam_aic_issecure(uint32_t irq)
+{
+  uintptr_t regaddr;
+  uint32_t bit;
+  unsigned int regndx;
+
+  /* Get the register index and bit mask */
+
+  regndx = (irq >> 5);
+  bit    = ((uint32_t)1 << (irq & 0x1f));
+
+  /* Get the SPSELR register address */
+
+  DEBUGASSERT(regndx < 3);
+  if ((g_h64mxpids[regndx] & bit) != 0)
+    {
+      /* H64MX.  Use Matrix 0 */
+
+      regaddr = SAM_MATRIX0_SPSELR(regndx);
+    }
+  else
+    {
+      /* H32MX.  Use Matrix 1 */
+
+      regaddr = SAM_MATRIX1_SPSELR(regndx);
+    }
+
+  /* Return true if the bit corresponding to this IRQ is zero */
+
+  return (getreg32(regaddr) & bit) == 0;
+}
+#endif
+
+/****************************************************************************
+ * Name: sam_aic_redirection
+ *
+ * Description:
+ *   Redirect all interrupts to the AIC.  This function is only compiled if
+ *   (1) the architecture supports an SAIC (CONFIG_SAMA5_HAVE_SAIC), but (2)
+ *   Use of the SAIC has not been selected (!CONFIG_SAMA5_SAIC).
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_SAMA5_HAVE_SAIC) && !defined(CONFIG_SAMA5_SAIC)
+static void sam_aic_redirection(void)
+{
+  unsigned int regval;
+
+  /* Check if interrupts are already redirected to the AIC */
+
+  regval = getreg32(SAM_SFR_AICREDIR);
+  if ((regval & SFR_AICREDIR_ENABLE) == 0)
+    {
+      /* Enable redirection of all interrupts to the AIC */
+
+      regval  = getreg32(SAM_SFR_SN1);
+      regval ^= SFR_AICREDIR_KEY;
+      regval |= SFR_AICREDIR_ENABLE;
+      putreg32(regval, SAM_SFR_AICREDIR);
+
+#if defined(CONFIG_DEBUG_IRQ)
+      /* Check if redirection was successfully enabled */
+
+      regval = getreg32(SAM_SFR_AICREDIR);
+      lldbg("Interrupts %s redirected to the AIC\n",
+           (regval & SFR_AICREDIR_ENABLE) != 0 ? "ARE" : "NOT");
+#endif
+    }
+}
+#else
+#  define sam_aic_redirection()
+#endif
+
+/****************************************************************************
+ * Name: sam_aic_initialize
+ *
+ * Description:
+ *   Initialize the AIC or the SAIC.
+ *
+ ****************************************************************************/
+
+static void sam_aic_initialize(uintptr_t base)
+{
+  int i;
+
+  /* Unprotect SMR, SVR, SPU and DCR register */
+
+  putreg32(AIC_WPMR_WPKEY, base + SAM_AIC_WPMR_OFFSET);
+
+  /* Configure the FIQ and the IRQs. */
+
+  for (i = 0; i < SAM_IRQ_NINT; i++)
+    {
+      /* Select the interrupt registers */
+
+      putreg32(i, base + SAM_AIC_SSR_OFFSET);
+
+      /* Disable the interrupt */
+
+      putreg32(AIC_IDCR_INTD, base + SAM_AIC_IDCR_OFFSET);
+
+      /* Set the (unused) FIQ/IRQ handler */
+
+      if (i == SAM_PID_FIQ)
+        {
+          putreg32((uint32_t)sam_fiqhandler, base + SAM_AIC_SVR_OFFSET);
+        }
+      else
+        {
+          putreg32((uint32_t)arm_doirq, base + SAM_AIC_SVR_OFFSET);
+        }
+
+      /* Set the default interrupt priority */
+
+      putreg32(SAM_DEFAULT_PRIOR, base + SAM_AIC_SMR_OFFSET);
+
+      /* Clear any pending interrupt */
+
+      putreg32(AIC_ICCR_INTCLR, base + SAM_AIC_ICCR_OFFSET);
+    }
+
+  /* Set the (unused) spurious interrupt handler */
+
+  putreg32((uint32_t)sam_spurious, base + SAM_AIC_SPU_OFFSET);
+
+  /* Perform 8 interrupt acknowledgements by writing any value to the
+   * EOICR register.
    */
 
-#if defined(CONFIG_DEBUG_IRQ) || defined(CONFIG_ARCH_STACKDUMP)
-  lldbg("FIQ?: IRQ: %d\n");
-#endif
-  PANIC();
-  return regs; /* Won't get here */
+  for (i = 0; i < 8; i++)
+    {
+      putreg32(AIC_EOICR_ENDIT, base + SAM_AIC_EOICR_OFFSET);
+    }
+
+  /* Restore protection and the interrupt state */
+
+  putreg32(AIC_WPMR_WPKEY | AIC_WPMR_WPEN, base + SAM_AIC_WPMR_OFFSET);
 }
 
 /****************************************************************************
@@ -240,7 +420,6 @@ void up_irqinitialize(void)
 #if defined(CONFIG_SAMA5_BOOT_ISRAM) || defined(CONFIG_SAMA5_BOOT_CS0FLASH)
   size_t vectorsize;
 #endif
-  int i;
 
   /* The following operations need to be atomic, but since this function is
    * called early in the initialization sequence, we expect to have exclusive
@@ -257,58 +436,20 @@ void up_irqinitialize(void)
   }
 #endif
 
-  /* Unprotect SMR, SVR, SPU and DCR register */
+  /* Redirect all interrupts to the AIC if so configured */
 
-  putreg32(AIC_WPMR_WPKEY, SAM_AIC_WPMR);
+  sam_aic_redirection();
 
-  /* Configure the FIQ and the IRQs. */
+  /* Initialize the Advanced Interrupt Controller (AIC) */
 
-  for (i = 0; i < SAM_IRQ_NINT; i++)
-    {
-      /* Select the interrupt registers */
+  sam_aic_initialize(SAM_AIC_VBASE);
 
-      putreg32(i, SAM_AIC_SSR);
+#if defined(CONFIG_SAMA5_SAIC)
+  /* Initialize the Secure Advanced Interrupt Controller (SAIC) */
 
-      /* Disable the interrupt */
+  sam_aic_initialize(SAM_SAIC_VBASE);
 
-      putreg32(AIC_IDCR_INTD, SAM_AIC_IDCR);
-
-      /* Set the (unused) FIQ/IRQ handler */
-
-      if (i == SAM_PID_FIQ)
-        {
-          putreg32((uint32_t)sam_fiqhandler, SAM_AIC_SVR);
-        }
-      else
-        {
-          putreg32((uint32_t)arm_doirq, SAM_AIC_SVR);
-        }
-
-      /* Set the default interrupt priority */
-
-      putreg32(SAM_DEFAULT_PRIOR, SAM_AIC_SMR);
-
-      /* Clear any pending interrupt */
-
-      putreg32(AIC_ICCR_INTCLR, SAM_AIC_ICCR);
-    }
-
-  /* Set the (unused) spurious interrupt handler */
-
-  putreg32((uint32_t)sam_spurious, SAM_AIC_SPU);
-
-  /* Perform 8 interrupt acknowledgements by writing any value to the
-   * EOICR register.
-   */
-
-  for (i = 0; i < 8 ; i++)
-    {
-      putreg32(AIC_EOICR_ENDIT, SAM_AIC_EOICR);
-    }
-
-  /* Restore protection and the interrupt state */
-
-  putreg32(AIC_WPMR_WPKEY | AIC_WPMR_WPEN, SAM_AIC_WPMR);
+#endif
 
 #if defined(CONFIG_ARCH_LOWVECTORS)
   /* If CONFIG_ARCH_LOWVECTORS is defined, then the vectors located at the
@@ -326,7 +467,7 @@ void up_irqinitialize(void)
    *      0x0000:00000.   VBAR == 0x0000:0000.
    *
    *      This method is used when booting from ISRAM or NOR FLASH.  In
-   &      that case, vectors must lie at the beginning of NOFR FLASH.
+   *      that case, vectors must lie at the beginning of NOFR FLASH.
    *
    *   3. Set the Cortex-A5 VBAR register so that the vector table address
    *      is moved to a location other than 0x0000:0000.
@@ -377,11 +518,13 @@ void up_irqinitialize(void)
    * address 0x0000:0000 in that case anyway.
    */
 
+#ifdef ATSAMA5D3
   putreg32(MATRIX_MRCR_RCB0, SAM_MATRIX_MRCR);   /* Enable Cortex-A5 remap */
+#endif
 
 #if defined(CONFIG_SAMA5_BOOT_ISRAM)
   putreg32(AXIMX_REMAP_REMAP0, SAM_AXIMX_REMAP); /* Remap SRAM */
-#else /* elif defined(CONFIG_SAMA5_BOOT_CS0FLASH) */
+#elif defined(ATSAMA5D3) /* && defined(CONFIG_SAMA5_BOOT_CS0FLASH) */
   putreg32(AXIMX_REMAP_REMAP1, SAM_AXIMX_REMAP); /* Remap NOR FLASH on CS0 */
 #endif
 
@@ -427,7 +570,7 @@ void up_irqinitialize(void)
 }
 
 /****************************************************************************
- * Name: arm_decodeirq
+ * Name: arm_decodeirq, arm_decodefiq (and sam_decodeirq helper).
  *
  * Description:
  *   This function is called from the IRQ vector handler in arm_vectors.S.
@@ -436,12 +579,12 @@ void up_irqinitialize(void)
  *   the irq number of the interrupt and then to call arm_doirq to dispatch
  *   the interrupt.
  *
- *  Input paramters:
+ *  Input parameters:
  *   regs - A pointer to the register save area on the stack.
  *
  ****************************************************************************/
 
-uint32_t *arm_decodeirq(uint32_t *regs)
+static uint32_t *sam_decodeirq(uintptr_t base, uint32_t *regs)
 {
   uint32_t irqid;
   uint32_t ivr;
@@ -478,14 +621,14 @@ uint32_t *arm_decodeirq(uint32_t *regs)
 
   /* Write in the IVR to support Protect Mode */
 
-  ivr = getreg32(SAM_AIC_IVR);
-  putreg32(ivr, SAM_AIC_IVR);
+  ivr = getreg32(base + SAM_AIC_IVR_OFFSET);
+  putreg32(ivr, base + SAM_AIC_IVR_OFFSET);
 
-  /* Get the IRQ number from the interrrupt status register.  NOTE that the
+  /* Get the IRQ number from the interrupt status register.  NOTE that the
    * IRQ number is the same is the peripheral ID (PID).
    */
 
-  irqid = getreg32(SAM_AIC_ISR) & AIC_ISR_MASK;
+  irqid = getreg32(base + SAM_AIC_ISR_OFFSET) & AIC_ISR_MASK;
 
   /* Dispatch the interrupt */
 
@@ -493,19 +636,58 @@ uint32_t *arm_decodeirq(uint32_t *regs)
 
   /* Acknowledge interrupt */
 
-  putreg32(AIC_EOICR_ENDIT, SAM_AIC_EOICR);
+  putreg32(AIC_EOICR_ENDIT, base + SAM_AIC_EOICR_OFFSET);
   return regs;
 }
 
+/* This is the entry point from the ARM IRQ vector handler */
+
+uint32_t *arm_decodeirq(uint32_t *regs)
+{
+  return sam_decodeirq(SAM_AIC_VBASE, regs);
+}
+
+#if defined(CONFIG_SAMA5_SAIC)
+/* This is the entry point from the ARM FIQ vector handler */
+
+uint32_t *arm_decodefiq(FAR uint32_t *regs)
+{
+  uint32_t *ret;
+
+  /* In order to distinguish a FIQ from a true secure interrupt we need to
+   * check the state of the FIQ line in the SAIC_CISR register.
+   */
+
+  if ((getreg32(SAM_SAIC_CISR) & AIC_CISR_NFIQ) != 0)
+    {
+      /* Handle the FIQ */
+
+      ret = arm_doirq(SAM_IRQ_FIQ, regs);
+
+      /* Acknowledge interrupt */
+
+      putreg32(AIC_EOICR_ENDIT, SAM_SAIC_EOICR);
+    }
+  else
+    {
+      /* Handle the IRQ */
+
+      ret = sam_decodeirq(SAM_SAIC_VBASE, regs);
+    }
+
+  return ret;
+}
+#endif
+
 /****************************************************************************
- * Name: up_disable_irq
+ * Name: up_disable_irq (and sam_disable_irq helper)
  *
  * Description:
  *   Disable the IRQ specified by 'irq'
  *
  ****************************************************************************/
 
-void up_disable_irq(int irq)
+static void sam_disable_irq(uintptr_t base, int irq)
 {
   irqstate_t flags;
 
@@ -517,12 +699,12 @@ void up_disable_irq(int irq)
 
       /* Select the register set associated with this irq */
 
-      putreg32(irq, SAM_AIC_SSR);
+      putreg32(irq, base + SAM_AIC_SSR_OFFSET);
 
       /* Disable the interrupt */
 
-      putreg32(AIC_IDCR_INTD, SAM_AIC_IDCR);
-      sam_dumpaic("disable", irq);
+      putreg32(AIC_IDCR_INTD, base + SAM_AIC_IDCR_OFFSET);
+      sam_dumpaic("disable", base, irq);
       irqrestore(flags);
     }
 #ifdef CONFIG_SAMA5_PIO_IRQ
@@ -533,18 +715,31 @@ void up_disable_irq(int irq)
       sam_pioirqdisable(irq);
     }
 #endif
-  sam_dumpaic("disable", irq);
+}
+
+void up_disable_irq(int irq)
+{
+#if defined(CONFIG_SAMA5_SAIC)
+  if (sam_aic_issecure(irq))
+    {
+      sam_disable_irq(SAM_SAIC_VBASE, irq);
+    }
+  else
+#endif
+    {
+      sam_disable_irq(SAM_AIC_VBASE, irq);
+    }
 }
 
 /****************************************************************************
- * Name: up_enable_irq
+ * Name: up_enable_irq (and sam_enable_irq helper)
  *
  * Description:
  *   Enable the IRQ specified by 'irq'
  *
  ****************************************************************************/
 
-void up_enable_irq(int irq)
+static void sam_enable_irq(uintptr_t base, int irq)
 {
   irqstate_t flags;
 
@@ -556,12 +751,12 @@ void up_enable_irq(int irq)
 
       /* Select the register set associated with this irq */
 
-      putreg32(irq, SAM_AIC_SSR);
+      putreg32(irq, base + SAM_AIC_SSR_OFFSET);
 
       /* Enable the interrupt */
 
-      putreg32(AIC_IECR_INTEN, SAM_AIC_IECR);
-      sam_dumpaic("enable", irq);
+      putreg32(AIC_IECR_INTEN, base + SAM_AIC_IECR_OFFSET);
+      sam_dumpaic("enable", base, irq);
       irqrestore(flags);
     }
 #ifdef CONFIG_SAMA5_PIO_IRQ
@@ -572,6 +767,20 @@ void up_enable_irq(int irq)
       sam_pioirqenable(irq);
     }
 #endif
+}
+
+void up_enable_irq(int irq)
+{
+#if defined(CONFIG_SAMA5_SAIC)
+  if (sam_aic_issecure(irq))
+    {
+      sam_enable_irq(SAM_SAIC_VBASE, irq);
+    }
+  else
+#endif
+    {
+      sam_enable_irq(SAM_AIC_VBASE, irq);
+    }
 }
 
 /****************************************************************************
@@ -588,7 +797,7 @@ void up_maskack_irq(int irq)
 }
 
 /****************************************************************************
- * Name: up_prioritize_irq
+ * Name: up_prioritize_irq (and sam_prioritize_irq helper)
  *
  * Description:
  *   Set the priority of an IRQ.
@@ -599,7 +808,7 @@ void up_maskack_irq(int irq)
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_IRQPRIO
-int up_prioritize_irq(int irq, int priority)
+static int sam_prioritize_irq(uint32_t base, int irq, int priority)
 {
   irqstate_t flags;
   uint32_t regval;
@@ -613,32 +822,46 @@ int up_prioritize_irq(int irq, int priority)
 
       /* Select the register set associated with this irq */
 
-      putreg32(irq, SAM_AIC_SSR);
+      putreg32(irq, base + SAM_AIC_SSR_OFFSET);
 
       /* Unprotect and write the SMR register */
 
-      putreg32(AIC_WPMR_WPKEY, SAM_AIC_WPMR);
+      putreg32(AIC_WPMR_WPKEY, base + SAM_AIC_WPMR_OFFSET);
 
       /* Set the new priority, preserving the current srctype */
 
-      regval  = getreg32(SAM_AIC_SMR);
+      regval  = getreg32(base + SAM_AIC_SMR_OFFSET);
       regval &= ~AIC_SMR_PRIOR_MASK;
       regval |= (uint32_t)priority << AIC_SMR_PRIOR_SHIFT;
-      putreg32(regval, SAM_AIC_SMR);
+      putreg32(regval, base + SAM_AIC_SMR_OFFSET);
 
       /* Restore protection and the interrupt state */
 
-      putreg32(AIC_WPMR_WPKEY | AIC_WPMR_WPEN, SAM_AIC_WPMR);
-      sam_dumpaic("prioritize", irq);
+      putreg32(AIC_WPMR_WPKEY | AIC_WPMR_WPEN, base + SAM_AIC_WPMR_OFFSET);
+      sam_dumpaic("prioritize", base, irq);
       irqrestore(flags);
     }
 
   return OK;
 }
+
+int up_prioritize_irq(int irq, int priority)
+{
+#if defined(CONFIG_SAMA5_SAIC)
+  if (sam_aic_issecure(irq))
+    {
+      sam_prioritize_irq(SAM_SAIC_VBASE, irq, priority);
+    }
+  else
+#endif
+    {
+      sam_prioritize_irq(SAM_AIC_VBASE, irq, priority);
+    }
+}
 #endif
 
 /****************************************************************************
- * Name: sam_irq_srctype
+ * Name: sam_irq_srctype (and _sam_irq_srctype helper)
  *
  * Description:
  *   irq     - Identifies the IRQ source to be configured
@@ -646,7 +869,8 @@ int up_prioritize_irq(int irq, int priority)
  *
  ****************************************************************************/
 
-void sam_irq_srctype(int irq, enum sam_srctype_e srctype)
+static void _sam_irq_srctype(uintptr_t base, int irq,
+                             enum sam_srctype_e srctype)
 {
   irqstate_t flags;
   uint32_t regval;
@@ -659,23 +883,36 @@ void sam_irq_srctype(int irq, enum sam_srctype_e srctype)
 
   /* Select the register set associated with this irq */
 
-  putreg32(irq, SAM_AIC_SSR);
+  putreg32(irq, base + SAM_AIC_SSR_OFFSET);
 
   /* Unprotect and write the SMR register */
 
-  putreg32(AIC_WPMR_WPKEY, SAM_AIC_WPMR);
+  putreg32(AIC_WPMR_WPKEY, base + SAM_AIC_WPMR_OFFSET);
 
   /* Set the new srctype, preserving the current priority */
 
-  regval  = getreg32(SAM_AIC_SMR);
+  regval  = getreg32(base + SAM_AIC_SMR_OFFSET);
   regval &= ~AIC_SMR_SRCTYPE_MASK;
   regval |= (uint32_t)g_srctype[srctype] << AIC_SMR_SRCTYPE_SHIFT;
-  putreg32(regval, SAM_AIC_SMR);
+  putreg32(regval, base + SAM_AIC_SMR_OFFSET);
 
   /* Restore protection and the interrupt state */
 
-  putreg32(AIC_WPMR_WPKEY | AIC_WPMR_WPEN, SAM_AIC_WPMR);
-  sam_dumpaic("srctype", irq);
+  putreg32(AIC_WPMR_WPKEY | AIC_WPMR_WPEN, base + SAM_AIC_WPMR_OFFSET);
+  sam_dumpaic("srctype", base, irq);
   irqrestore(flags);
 }
 
+void sam_irq_srctype(int irq, enum sam_srctype_e srctype)
+{
+#if defined(CONFIG_SAMA5_SAIC)
+  if (sam_aic_issecure(irq))
+    {
+      _sam_irq_srctype(SAM_SAIC_VBASE, irq, srctype);
+    }
+  else
+#endif
+    {
+      _sam_irq_srctype(SAM_AIC_VBASE, irq, srctype);
+    }
+}

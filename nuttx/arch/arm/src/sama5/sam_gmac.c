@@ -57,13 +57,14 @@
 #include <queue.h>
 #include <errno.h>
 
+#include <arpa/inet.h>
+
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/net/gmii.h>
-#include <nuttx/net/uip/uip.h>
-#include <nuttx/net/uip/uip-arp.h>
-#include <nuttx/net/uip/uip-arch.h>
+#include <nuttx/net/arp.h>
+#include <nuttx/net/netdev.h>
 
 #include "up_arch.h"
 #include "up_internal.h"
@@ -174,7 +175,7 @@
  * header
  */
 
-#define BUF ((struct uip_eth_hdr *)priv->dev.d_buf)
+#define BUF ((struct eth_hdr_s *)priv->dev.d_buf)
 
 /****************************************************************************
  * Private Types
@@ -190,7 +191,7 @@ struct sam_gmac_s
 
   /* This holds the information visible to uIP/NuttX */
 
-  struct uip_driver_s   dev;         /* Interface understood by uIP */
+  struct net_driver_s   dev;         /* Interface understood by uIP */
 
   /* Used to track transmit and receive descriptors */
 
@@ -275,7 +276,7 @@ static void sam_buffer_free(struct sam_gmac_s *priv);
 /* Common TX logic */
 
 static int  sam_transmit(struct sam_gmac_s *priv);
-static int  sam_uiptxpoll(struct uip_driver_s *dev);
+static int  sam_txpoll(struct net_driver_s *dev);
 static void sam_dopoll(struct sam_gmac_s *priv);
 
 /* Interrupt handling */
@@ -292,12 +293,12 @@ static void sam_txtimeout(int argc, uint32_t arg, ...);
 
 /* NuttX callback functions */
 
-static int  sam_ifup(struct uip_driver_s *dev);
-static int  sam_ifdown(struct uip_driver_s *dev);
-static int  sam_txavail(struct uip_driver_s *dev);
+static int  sam_ifup(struct net_driver_s *dev);
+static int  sam_ifdown(struct net_driver_s *dev);
+static int  sam_txavail(struct net_driver_s *dev);
 #ifdef CONFIG_NET_IGMP
-static int  sam_addmac(struct uip_driver_s *dev, const uint8_t *mac);
-static int  sam_rmmac(struct uip_driver_s *dev, const uint8_t *mac);
+static int  sam_addmac(struct net_driver_s *dev, const uint8_t *mac);
+static int  sam_rmmac(struct net_driver_s *dev, const uint8_t *mac);
 #endif
 
 /* PHY Initialization */
@@ -452,7 +453,7 @@ static uint16_t sam_txinuse(struct sam_gmac_s *priv)
   uint32_t txhead32 = (uint32_t)priv->txhead;
   if ((uint32_t)priv->txtail > txhead32)
     {
-      return txhead32 += CONFIG_SAMA5_GMAC_NTXBUFFERS;
+      txhead32 += CONFIG_SAMA5_GMAC_NTXBUFFERS;
     }
 
   return (uint16_t)(txhead32 - (uint32_t)priv->txtail);
@@ -631,7 +632,7 @@ static void sam_buffer_free(struct sam_gmac_s *priv)
 
 static int sam_transmit(struct sam_gmac_s *priv)
 {
-  struct uip_driver_s *dev = &priv->dev;
+  struct net_driver_s *dev = &priv->dev;
   volatile struct gmac_txdesc_s *txdesc;
   uintptr_t virtaddr;
   uint32_t regval;
@@ -712,8 +713,8 @@ static int sam_transmit(struct sam_gmac_s *priv)
 
   /* If we have no more available TX descriptors, then we must disable the
    * RCOMP interrupt to stop further RX processing.  Why?  Because EACH RX
-   * packet that is dispatch is also an opportunity to replay with the a TX
-   * packet.  So, if we cannot handle an RX packet replay, then we disable
+   * packet that is dispatched is also an opportunity to reply with a TX
+   * packet.  So, if we cannot handle an RX packet reply, then we disable
    * all RX packet processing.
    */
 
@@ -727,11 +728,11 @@ static int sam_transmit(struct sam_gmac_s *priv)
 }
 
 /****************************************************************************
- * Function: sam_uiptxpoll
+ * Function: sam_txpoll
  *
  * Description:
  *   The transmitter is available, check if uIP has any outgoing packets ready
- *   to send.  This is a callback from uip_poll().  uip_poll() may be called:
+ *   to send.  This is a callback from devif_poll().  devif_poll() may be called:
  *
  *   1. When the preceding TX packet send is complete,
  *   2. When the preceding TX packet send timesout and the interface is reset
@@ -750,7 +751,7 @@ static int sam_transmit(struct sam_gmac_s *priv)
  *
  ****************************************************************************/
 
-static int sam_uiptxpoll(struct uip_driver_s *dev)
+static int sam_txpoll(struct net_driver_s *dev)
 {
   struct sam_gmac_s *priv = (struct sam_gmac_s *)dev->d_private;
 
@@ -762,7 +763,7 @@ static int sam_uiptxpoll(struct uip_driver_s *dev)
     {
       /* Send the packet */
 
-      uip_arp_out(&priv->dev);
+      arp_out(&priv->dev);
       sam_transmit(priv);
 
       /* Check if the there are any free TX descriptors.  We cannot perform
@@ -805,7 +806,7 @@ static int sam_uiptxpoll(struct uip_driver_s *dev)
 
 static void sam_dopoll(struct sam_gmac_s *priv)
 {
-  struct uip_driver_s *dev = &priv->dev;
+  struct net_driver_s *dev = &priv->dev;
 
   /* Check if the there are any free TX descriptors.  We cannot perform the
    * TX poll if we do not have buffering for another packet.
@@ -815,7 +816,7 @@ static void sam_dopoll(struct sam_gmac_s *priv)
     {
       /* If we have the descriptor, then poll uIP for new XMIT data. */
 
-      (void)uip_poll(dev, sam_uiptxpoll);
+      (void)devif_poll(dev, sam_txpoll);
     }
 }
 
@@ -845,7 +846,7 @@ static void sam_dopoll(struct sam_gmac_s *priv)
 static int sam_recvframe(struct sam_gmac_s *priv)
 {
   volatile struct gmac_rxdesc_s *rxdesc;
-  struct uip_driver_s *dev;
+  struct net_driver_s *dev;
   const uint8_t *src;
   uint8_t  *dest;
   uintptr_t physaddr;
@@ -860,6 +861,9 @@ static int sam_recvframe(struct sam_gmac_s *priv)
 
   dev        = &priv->dev;
   dev->d_len = 0;
+
+  dest       = dev->d_buf;
+  pktlen     = 0;
 
   rxndx      = priv->rxndx;
   rxdesc     = &priv->rxdesc[rxndx];
@@ -1062,8 +1066,8 @@ static int sam_recvframe(struct sam_gmac_s *priv)
  * Function: sam_receive
  *
  * Description:
- *   An interrupt was received indicating the availability of a new RX packet
- *   in FIFO memory.
+ *   An interrupt was received indicating the availability of onr or more
+ *   new RX packets in FIFO memory.
  *
  * Parameters:
  *   priv  - Reference to the driver state structure
@@ -1078,7 +1082,7 @@ static int sam_recvframe(struct sam_gmac_s *priv)
 
 static void sam_receive(struct sam_gmac_s *priv)
 {
-  struct uip_driver_s *dev = &priv->dev;
+  struct net_driver_s *dev = &priv->dev;
 
   /* Loop while while sam_recvframe() successfully retrieves valid
    * GMAC frames.
@@ -1100,17 +1104,17 @@ static void sam_receive(struct sam_gmac_s *priv)
       /* We only accept IP packets of the configured type and ARP packets */
 
 #ifdef CONFIG_NET_IPv6
-      else if (BUF->type == HTONS(UIP_ETHTYPE_IP6))
+      else if (BUF->type == HTONS(ETHTYPE_IP6))
 #else
-      else if (BUF->type == HTONS(UIP_ETHTYPE_IP))
+      else if (BUF->type == HTONS(ETHTYPE_IP))
 #endif
         {
           nllvdbg("IP frame\n");
 
           /* Handle ARP on input then give the IP packet to uIP */
 
-          uip_arp_ipin(&priv->dev);
-          uip_input(&priv->dev);
+          arp_ipin(&priv->dev);
+          devif_input(&priv->dev);
 
           /* If the above function invocation resulted in data that should be
            * sent out on the network, the field  d_len will set to a value > 0.
@@ -1118,17 +1122,17 @@ static void sam_receive(struct sam_gmac_s *priv)
 
           if (priv->dev.d_len > 0)
            {
-             uip_arp_out(&priv->dev);
+             arp_out(&priv->dev);
              sam_transmit(priv);
            }
         }
-      else if (BUF->type == htons(UIP_ETHTYPE_ARP))
+      else if (BUF->type == htons(ETHTYPE_ARP))
         {
           nllvdbg("ARP frame\n");
 
           /* Handle ARP packet */
 
-          uip_arp_arpin(&priv->dev);
+          arp_arpin(&priv->dev);
 
           /* If the above function invocation resulted in data that should be
            * sent out on the network, the field  d_len will set to a value > 0.
@@ -1150,8 +1154,8 @@ static void sam_receive(struct sam_gmac_s *priv)
  * Function: sam_txdone
  *
  * Description:
- *   An interrupt was received indicating that a frame has completed
- *   transmission.
+ *   An interrupt was received indicating that one or more frames have
+ *   completed transmission.
  *
  * Parameters:
  *   priv  - Reference to the driver state structure
@@ -1168,9 +1172,9 @@ static void sam_txdone(struct sam_gmac_s *priv)
 {
   struct gmac_txdesc_s *txdesc;
 
-  /* Are there any outstanding transmssions?  Loop until either (1) all of
-   * the TX have been examined, or (2) until we encounter the first
-   * descriptor that is still in use by the hardware.
+  /* Are there any outstanding transmissions?  Loop until either (1) all of
+   * the TX descriptors have been examined, or (2) until we encounter the
+   * first descriptor that is still in use by the hardware.
    */
 
   while (priv->txhead != priv->txtail)
@@ -1221,7 +1225,7 @@ static void sam_txdone(struct sam_gmac_s *priv)
 
       /* At least one TX descriptor is available.  Re-enable RX interrupts.
        * RX interrupts may previously have been disabled when we ran out of
-       * TX desciptors (see commits in sam_transmit()).
+       * TX descriptors (see comments in sam_transmit()).
        */
 
       sam_putreg(priv, SAM_GMAC_IER, GMAC_INT_RCOMP);
@@ -1500,7 +1504,7 @@ static void sam_txtimeout(int argc, uint32_t arg, ...)
 static void sam_polltimer(int argc, uint32_t arg, ...)
 {
   struct sam_gmac_s *priv = (struct sam_gmac_s *)arg;
-  struct uip_driver_s   *dev  = &priv->dev;
+  struct net_driver_s   *dev  = &priv->dev;
 
   /* Check if the there are any free TX descriptors.  We cannot perform the
    * TX poll if we do not have buffering for another packet.
@@ -1510,7 +1514,7 @@ static void sam_polltimer(int argc, uint32_t arg, ...)
     {
       /* Update TCP timing states and poll uIP for new XMIT data. */
 
-      (void)uip_timer(dev, sam_uiptxpoll, SAM_POLLHSEC);
+      (void)devif_timer(dev, sam_txpoll, SAM_POLLHSEC);
     }
 
   /* Setup the watchdog poll timer again */
@@ -1535,7 +1539,7 @@ static void sam_polltimer(int argc, uint32_t arg, ...)
  *
  ****************************************************************************/
 
-static int sam_ifup(struct uip_driver_s *dev)
+static int sam_ifup(struct net_driver_s *dev)
 {
   struct sam_gmac_s *priv = (struct sam_gmac_s *)dev->d_private;
   int ret;
@@ -1608,7 +1612,7 @@ static int sam_ifup(struct uip_driver_s *dev)
  *
  ****************************************************************************/
 
-static int sam_ifdown(struct uip_driver_s *dev)
+static int sam_ifdown(struct net_driver_s *dev)
 {
   struct sam_gmac_s *priv = (struct sam_gmac_s *)dev->d_private;
   irqstate_t flags;
@@ -1658,7 +1662,7 @@ static int sam_ifdown(struct uip_driver_s *dev)
  *
  ****************************************************************************/
 
-static int sam_txavail(struct uip_driver_s *dev)
+static int sam_txavail(struct net_driver_s *dev)
 {
   struct sam_gmac_s *priv = (struct sam_gmac_s *)dev->d_private;
   irqstate_t flags;
@@ -1703,7 +1707,7 @@ static int sam_txavail(struct uip_driver_s *dev)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_IGMP
-static int sam_addmac(struct uip_driver_s *dev, const uint8_t *mac)
+static int sam_addmac(struct net_driver_s *dev, const uint8_t *mac)
 {
   struct sam_gmac_s *priv = (struct sam_gmac_s *)dev->d_private;
 
@@ -1737,7 +1741,7 @@ static int sam_addmac(struct uip_driver_s *dev, const uint8_t *mac)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_IGMP
-static int sam_rmmac(struct uip_driver_s *dev, const uint8_t *mac)
+static int sam_rmmac(struct net_driver_s *dev, const uint8_t *mac)
 {
   struct sam_gmac_s *priv = (struct sam_gmac_s *)dev->d_private;
 
@@ -2762,8 +2766,6 @@ static void sam_rxreset(struct sam_gmac_s *priv)
 
 static void sam_gmac_reset(struct sam_gmac_s *priv)
 {
-  uint32_t regval;
-
   /* Disable all GMAC interrupts */
 
   sam_putreg(priv, SAM_GMAC_IDR, GMAC_INT_ALL);
@@ -2773,10 +2775,9 @@ static void sam_gmac_reset(struct sam_gmac_s *priv)
   sam_rxreset(priv);
   sam_txreset(priv);
 
-  /* Disable RX, TX, and statistics */
+  /* Make sure that RX and TX are disabled; clear statistics registers */
 
-  regval = GMAC_NCR_TXEN | GMAC_NCR_RXEN | GMAC_NCR_WESTAT | GMAC_NCR_CLRSTAT;
-  sam_putreg(priv, SAM_GMAC_NCR, regval);
+  sam_putreg(priv, SAM_GMAC_NCR, GMAC_NCR_CLRSTAT);
 
   /* Disable clocking to the GMAC peripheral */
 
@@ -2801,7 +2802,7 @@ static void sam_gmac_reset(struct sam_gmac_s *priv)
 
 static void sam_macaddress(struct sam_gmac_s *priv)
 {
-  struct uip_driver_s *dev = &priv->dev;
+  struct net_driver_s *dev = &priv->dev;
   uint32_t regval;
 
   nllvdbg("%s MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
@@ -2849,14 +2850,10 @@ static int sam_gmac_configure(struct sam_gmac_s *priv)
 
   sam_gmac_enableclk();
 
-  /* Disable TX, RX, interrupts, etc. */
+  /* Disable TX, RX, clear statistics.  Disable all interrupts. */
 
-  sam_putreg(priv, SAM_GMAC_NCR, 0);
+  sam_putreg(priv, SAM_GMAC_NCR, GMAC_NCR_CLRSTAT);
   sam_putreg(priv, SAM_GMAC_IDR, GMAC_INT_ALL);
-
-  regval = sam_getreg(priv, SAM_GMAC_NCR);
-  regval |= GMAC_NCR_CLRSTAT;
-  sam_putreg(priv, SAM_GMAC_NCR, regval);
 
   /* Clear all status bits in the receive status register. */
 
@@ -2920,7 +2917,7 @@ static int sam_gmac_configure(struct sam_gmac_s *priv)
   sam_rxreset(priv);
   sam_txreset(priv);
 
-  /* Enable Rx and Tx, plus the stats register. */
+  /* Enable Rx and Tx, plus the statistics registers. */
 
   regval  = sam_getreg(priv, SAM_GMAC_NCR);
   regval |= (GMAC_NCR_RXEN | GMAC_NCR_TXEN | GMAC_NCR_WESTAT);

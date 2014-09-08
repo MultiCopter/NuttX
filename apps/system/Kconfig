@@ -19,6 +19,10 @@ menu "FLASH Erase-all Command"
 source "$APPSDIR/system/flash_eraseall/Kconfig"
 endmenu
 
+menu "Intel HEX to binary conversion"
+source "$APPSDIR/system/hex2bin/Kconfig"
+endmenu
+
 menu "I2C tool"
 source "$APPSDIR/system/i2c/Kconfig"
 endmenu
@@ -41,6 +45,10 @@ endmenu
 
 menu "P-Code Support"
 source "$APPSDIR/system/prun/Kconfig"
+endmenu
+
+menu "PHY Tool"
+source "$APPSDIR/system/mdio/Kconfig"
 endmenu
 
 menu "Power Off"
