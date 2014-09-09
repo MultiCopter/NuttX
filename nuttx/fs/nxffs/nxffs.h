@@ -553,7 +553,7 @@ off_t nxffs_iotell(FAR struct nxffs_volume_s *volume);
  *   over bad blocks and block headers as necessary.
  *
  * Input Parameters:
- *   volume - Describes the NXFFS volume.  The paramters ioblock and iooffset
+ *   volume - Describes the NXFFS volume.  The parameters ioblock and iooffset
  *     in the volume structure determine the behavior of nxffs_getc().
  *   reserve - If less than this much space is available at the end of the
  *     block, then skip to the next block.
@@ -577,7 +577,7 @@ int nxffs_getc(FAR struct nxffs_volume_s *volume, uint16_t reserve);
  *   to dispose of that memory when the inode entry is no longer needed.
  *
  *   Note that the nxffs_entry_s containing structure is not freed.  The
- *   caller may call kfree upon return of this function if necessary to
+ *   caller may call kmm_free upon return of this function if necessary to
  *   free the entry container.
  *
  * Input parameters:

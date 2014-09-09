@@ -59,6 +59,7 @@
 
 #include "netdev/netdev.h"
 #include "devif/devif.h"
+#include "arp/arp.h"
 #include "tcp/tcp.h"
 #include "socket/socket.h"
 
@@ -90,7 +91,7 @@ struct send_s
   ssize_t                 snd_sent;    /* The number of bytes sent */
   uint32_t                snd_isn;     /* Initial sequence number */
   uint32_t                snd_acked;   /* The number of bytes acked */
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
+#ifdef CONFIG_NET_SOCKOPTS
   uint32_t                snd_time;    /* Last send time for determining timeout */
 #endif
 #if defined(CONFIG_NET_TCP_SPLIT)
@@ -119,8 +120,7 @@ struct send_s
  *
  ****************************************************************************/
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
-
+#ifdef CONFIG_NET_SOCKOPTS
 static inline int send_timeout(FAR struct send_s *pstate)
 {
   FAR struct socket *psock = 0;
@@ -141,7 +141,7 @@ static inline int send_timeout(FAR struct send_s *pstate)
 
   return FALSE;
 }
-#endif /* CONFIG_NET_SOCKOPTS && !CONFIG_DISABLE_CLOCK */
+#endif /* CONFIG_NET_SOCKOPTS */
 
 /****************************************************************************
  * Function: tcpsend_interrupt
@@ -181,7 +181,7 @@ static uint16_t tcpsend_interrupt(FAR struct net_driver_s *dev,
     {
       /* Update the timeout */
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
+#ifdef CONFIG_NET_SOCKOPTS
       pstate->snd_time = clock_systimer();
 #endif
 
@@ -389,10 +389,14 @@ static uint16_t tcpsend_interrupt(FAR struct net_driver_s *dev,
            *
            * NOTE 2: If we are actually harvesting IP addresses on incoming IP
            * packets, then this check should not be necessary; the MAC mapping
-           * should already be in the ARP table.
+           * should already be in the ARP table in many cases.
+           *
+           * NOTE 3: If CONFIG_NET_ARP_SEND then we can be assured that the IP
+           * address mapping is already in the ARP table.
            */
 
-#if defined(CONFIG_NET_ETHERNET) && !defined(CONFIG_NET_ARP_IPIN)
+#if defined(CONFIG_NET_ETHERNET) && !defined(CONFIG_NET_ARP_IPIN) && \
+    !defined(CONFIG_NET_ARP_SEND)
          if (pstate->snd_sent != 0 || arp_find(conn->ripaddr) != NULL)
 #endif
             {
@@ -406,11 +410,11 @@ static uint16_t tcpsend_interrupt(FAR struct net_driver_s *dev,
         }
     }
 
+#ifdef CONFIG_NET_SOCKOPTS
   /* All data has been sent and we are just waiting for ACK or re-transmit
    * indications to complete the send.  Check for a timeout.
    */
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
   if (send_timeout(pstate))
     {
       /* Yes.. report the timeout */
@@ -419,7 +423,7 @@ static uint16_t tcpsend_interrupt(FAR struct net_driver_s *dev,
       pstate->snd_sent = -ETIMEDOUT;
       goto end_wait;
     }
-#endif /* CONFIG_NET_SOCKOPTS && !CONFIG_DISABLE_CLOCK */
+#endif /* CONFIG_NET_SOCKOPTS */
 
   /* Continue waiting */
 
@@ -506,6 +510,7 @@ end_wait:
 ssize_t psock_tcp_send(FAR struct socket *psock,
                        FAR const void *buf, size_t len)
 {
+  FAR struct tcp_conn_s *conn = (FAR struct tcp_conn_s *)psock->s_conn;
   struct send_s state;
   net_lock_t save;
   int err;
@@ -515,6 +520,7 @@ ssize_t psock_tcp_send(FAR struct socket *psock,
 
   if (!psock || psock->s_crefs <= 0)
     {
+      ndbg("ERROR: Invalid socket\n");
       err = EBADF;
       goto errout;
     }
@@ -523,9 +529,23 @@ ssize_t psock_tcp_send(FAR struct socket *psock,
 
   if (psock->s_type != SOCK_STREAM || !_SS_ISCONNECTED(psock->s_flags))
     {
+      ndbg("ERROR: Not connected\n");
       err = ENOTCONN;
       goto errout;
     }
+
+  /* Make sure that the IP address mapping is in the ARP table */
+
+  conn = (FAR struct tcp_conn_s *)psock->s_conn;
+#ifdef CONFIG_NET_ARP_SEND
+  ret = arp_send(conn->ripaddr);
+  if (ret < 0)
+    {
+      ndbg("ERROR: Not reachable\n");
+      err = ENETUNREACH;
+      goto errout;
+    }
+#endif
 
   /* Set the socket state to sending */
 
@@ -547,8 +567,6 @@ ssize_t psock_tcp_send(FAR struct socket *psock,
 
   if (len > 0)
     {
-      FAR struct tcp_conn_s *conn = (FAR struct tcp_conn_s *)psock->s_conn;
-
       /* Allocate resources to receive a callback */
 
       state.snd_cb = tcp_callback_alloc(conn);
@@ -566,7 +584,7 @@ ssize_t psock_tcp_send(FAR struct socket *psock,
 
           /* Set the initial time for calculating timeouts */
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
+#ifdef CONFIG_NET_SOCKOPTS
           state.snd_time        = clock_systimer();
 #endif
           /* Set up the callback in the connection */

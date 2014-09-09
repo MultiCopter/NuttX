@@ -7,12 +7,6 @@ choice
 	prompt "CPU Architecture"
 	default ARCH_ARM
 
-config ARCH_8051
-	bool "8051"
-	select CUSTOM_STACK
-	---help---
-		Intel 8051 architectures and derivatives
-
 config ARCH_ARM
 	bool "ARM"
 	select ARCH_HAVE_INTERRUPTSTACK
@@ -59,6 +53,7 @@ config ARCH_SH
 
 config ARCH_SIM
 	bool "Simulation"
+	select ARCH_HAVE_TICKLESS
 	---help---
 		Linux/Cywgin user-mode simulation.
 
@@ -83,7 +78,6 @@ endchoice
 
 config ARCH
 	string
-	default "8051"	if ARCH_8051
 	default "arm"	if ARCH_ARM
 	default "avr"	if ARCH_AVR
 	default "hc"	if ARCH_HC
@@ -95,7 +89,6 @@ config ARCH
 	default "z16"	if ARCH_Z16
 	default "z80"	if ARCH_Z80
 
-source arch/8051/Kconfig
 source arch/arm/Kconfig
 source arch/avr/Kconfig
 source arch/hc/Kconfig
@@ -125,11 +118,19 @@ config ARCH_HAVE_IRQPRIO
 	bool
 	default n
 
-config CUSTOM_STACK
+config ARCH_L2CACHE
 	bool
 	default n
 
-config ADDRENV
+config ARCH_HAVE_COHERENT_DCACHE
+	bool
+	default n
+
+config ARCH_HAVE_ADDRENV
+	bool
+	default n
+
+config ARCH_NEED_ADDRENV_MAPPING
 	bool
 	default n
 
@@ -141,6 +142,10 @@ config ARCH_HAVE_MMU
 	bool
 	default n
 
+config ARCH_HAVE_MPU
+	bool
+	default n
+
 config ARCH_NAND_HWECC
 	bool
 	default n
@@ -149,10 +154,94 @@ config ARCH_HAVE_EXTCLK
 	bool
 	default n
 
+config ARCH_USE_MMU
+	bool "Enable MMU"
+	default n
+	depends on ARCH_HAVE_MMU
+	---help---
+		The architecture supports supports an MMU.  Enable this option in
+		order to enable use of the MMU.  For most architectures, this is
+		not really an option:  It is required to use the MMU.  In those
+		cases, this selection will always be forced.
+
+config ARCH_USE_MPU
+	bool "Enable MPU"
+	default n
+	depends on ARCH_HAVE_MPU
+	---help---
+		The architecture supports supports an MPU.  Enable this option in
+		order to enable use of the MPU.  For most architectures, this option
+		is enabled by other, platform-specific logic.  In those cases, this
+		selection will always be forced.
+
+menuconfig ARCH_ADDRENV
+	bool "Address environments"
+	default n
+	depends on ARCH_HAVE_ADDRENV
+	---help---
+		Support per-task address environments using the MMU... i.e., support
+		"processes"
+
+if ARCH_ADDRENV && ARCH_NEED_ADDRENV_MAPPING
+
+config ARCH_TEXT_VBASE
+	hex "Virtual .text base"
+	---help---
+		The virtual address of the beginning the .text region
+
+config ARCH_DATA_VBASE
+	hex "Virtual .bss/.data base"
+	---help---
+		The virtual address of the beginning of the .bss/.data region.
+
+config ARCH_HEAP_VBASE
+	hex "Virtual heap base"
+	---help---
+		The virtual address of the beginning of the heap region.
+
+config ARCH_STACK_VBASE
+	hex "Virtual stack base"
+	---help---
+		The virtual address of the beginning the stack region
+
+config ARCH_TEXT_NPAGES
+	int "Max .text pages"
+	default 1
+	---help---
+		The maximum number of pages that can allocated for the .text region.
+		This, along with knowledge of the page size, determines the size of
+		the .text virtual address space. Default is 1.
+
+config ARCH_DATA_NPAGES
+	int "Max .bss/.data pages"
+	default 1
+	---help---
+		The maximum number of pages that can allocated for the .bss/.data
+		region. This, along with knowledge of the page size, determines the
+		size of the .bss/.data virtual address space. Default is 1.
+
+config ARCH_HEAP_NPAGES
+	int "Max heap pages"
+	default 1
+	---help---
+		The maximum number of pages that can allocated for the heap region.
+		This, along with knowledge of the page size, determines the size of
+		the heap virtual address space. Default is 1.
+
+config ARCH_STACK_NPAGES
+	int "Max. stack pages"
+	default 1
+	---help---
+		The maximum number of pages that can allocated for the stack region.
+		This, along with knowledge of the page size, determines the size of
+		the stack virtual address space. Default is 1.
+
+endif # ARCH_ADDRENV && ARCH_NEED_ADDRENV_MAPPING
+
 menuconfig PAGING
 	bool "On-demand paging"
 	default n
-	depends on ARCH_HAVE_MMU && !ARCH_ROMPGTABLE
+	depends on ARCH_USE_MMU && !ARCH_ROMPGTABLE
 	---help---
 		If set =y in your configation file, this setting will enable the on-demand
 		paging feature as described in http://www.nuttx.org/NuttXDemandPaging.html.
@@ -460,7 +549,7 @@ config ARCH_HIPRI_INTERRUPT
 
 			   int up_prioritize_irq(int irq, int priority)
 
-		NOTE: ARCH_INTERRUPTSTACK must be set in kernel mode (NUTTX_KERNEL).
+		NOTE: ARCH_INTERRUPTSTACK must be set in kernel mode (BUILD_KERNEL).
 		In kernel mode without an interrupt stack, the interrupt handler
 		will set the MSP to the stack pointer of the interrupted thread.  If
 		the interrupted thread was a privileged thread, that will be the MSP
@@ -564,7 +653,7 @@ config RAM_START
 config RAM_VSTART
 	hex "Primary RAM start address (virtual)"
 	default 0x0
-	depends on ARCH_HAVE_MMU
+	depends on ARCH_USE_MMU
 	help
 		The virtual start address of installed primary RAM. "Primary" RAM
 		refers to the RAM that you link program code into.  If program code
@@ -580,7 +669,7 @@ config RAM_SIZE
 		does not execute out of RAM but from FLASH, then you may designate
 		any block of RAM as "primary."
 
-if BOOT_RUNFROMFLASH && ARCH_HAVE_MMU
+if BOOT_RUNFROMFLASH && ARCH_USE_MMU
 
 config FLASH_START
 	hex "Boot FLASH start address (physical)"
@@ -603,7 +692,7 @@ config FLASH_SIZE
 		The size in bytes of the installed boot FLASH.  "Boot" FLASH
 		refers to the FLASH that you link program code into.
 
-endif # BOOT_RUNFROMFLASH && ARCH_HAVE_MMU
+endif # BOOT_RUNFROMFLASH && ARCH_USE_MMU
 
 config ARCH_HAVE_SDRAM
 	bool

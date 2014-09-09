@@ -39,7 +39,7 @@
 
 #include <nuttx/config.h>
 #if defined(CONFIG_NET) && defined(CONFIG_NET_ICMP) && \
-    defined(CONFIG_NET_ICMP_PING) && !defined(CONFIG_DISABLE_CLOCK)
+    defined(CONFIG_NET_ICMP_PING)
 
 #include <sys/types.h>
 #include <stdint.h>
@@ -58,6 +58,7 @@
 
 #include "netdev/netdev.h"
 #include "devif/devif.h"
+#include "arp/arp.h"
 #include "icmp/icmp.h"
 
 /****************************************************************************
@@ -331,6 +332,18 @@ int icmp_ping(net_ipaddr_t addr, uint16_t id, uint16_t seqno,
 {
   struct icmp_ping_s state;
   net_lock_t save;
+#ifdef CONFIG_NET_ARP_SEND
+  int ret;
+
+  /* Make sure that the IP address mapping is in the ARP table */
+
+  ret = arp_send(addr);
+  if (ret < 0)
+    {
+      ndbg("ERROR: Not reachable\n");
+      return -ENETUNREACH;
+    }
+#endif
 
   /* Initialize the state structure */
 

@@ -39,6 +39,12 @@
 
 #include <nuttx/config.h>
 
+/* Suppress verbose debug output so that we don't swamp the system */
+
+#ifdef CONFIG_MXT_DISABLE_DEBUG_VERBOSE
+#  undef CONFIG_DEBUG_VERBOSE
+#endif
+
 #include <sys/types.h>
 
 #include <stdbool.h>
@@ -74,26 +80,49 @@
 #define DEV_FORMAT   "/dev/input%d"
 #define DEV_NAMELEN  16
 
+/* This is a value for the threshold that guarantees a big difference on the
+ * first pendown (but can't overflow).
+ */
+
+#define INVALID_POSITION 0x1000
+
 /* Get a 16-bit value in little endian order (not necessarily aligned).  The
  * source data is in little endian order.  The host byte order does not
  * matter in this case.
  */
 
 #define MXT_GETUINT16(p) \
-  (((uint16_t)(((FAR uint8_t*)(p))[0]) << 8) | \
-    (uint16_t)(((FAR uint8_t*)(p))[1]))
+  (((uint16_t)(((FAR uint8_t*)(p))[1]) << 8) | \
+    (uint16_t)(((FAR uint8_t*)(p))[0]))
 
 /****************************************************************************
  * Private Types
  ****************************************************************************/
-/* This describes the state of one contact */
+/* This enumeration describes the state of one contact.
+ *
+ *                  |
+ *                  v
+ *             CONTACT_NONE            (1) Touch
+ *           / (1)        ^ (3)        (2) Release
+ *          v              \           (3) Event reported
+ *     CONTACT_NEW     CONTACT_LOST
+ *          \ (3)          ^ (2)
+ *           v            /
+ *           CONTACT_REPORT
+ *             \ (1)    ^ (3)
+ *              v      /
+ *            CONTACT_MOVE
+ *
+ * NOTE: This state transition diagram is simplified.  There are a few other
+ * sneaky transitions to handle unexpected conditions.
+ */
 
 enum mxt_contact_e
 {
   CONTACT_NONE = 0,                /* No contact */
   CONTACT_NEW,                     /* New contact */
   CONTACT_MOVE,                    /* Same contact, possibly different position */
-  CONTACT_REPORT,                  /* Contact reported*/
+  CONTACT_REPORT,                  /* Contact reported */
   CONTACT_LOST,                    /* Contact lost */
 };
 
@@ -106,6 +135,8 @@ struct mxt_sample_s
   bool     valid;                  /* True: x,y,pressure contain valid, sampled data */
   uint16_t x;                      /* Measured X position */
   uint16_t y;                      /* Measured Y position */
+  uint16_t lastx;                  /* Last reported X position */
+  uint16_t lasty;                  /* Last reported Y position */
   uint8_t  area;                   /* Contact area */
   uint8_t  pressure;               /* Contact pressure */
 };
@@ -164,8 +195,6 @@ struct mxt_dev_s
   volatile bool event;             /* True: An unreported event is buffered */
   sem_t devsem;                    /* Manages exclusive access to this structure */
   sem_t waitsem;                   /* Used to wait for the availability of data */
-  uint16_t xres;                   /* X resolution */
-  uint16_t yres;                   /* Y resolution */
   uint32_t frequency;              /* Current I2C frequency */
 
   char phys[64];                   /* Device physical location */
@@ -192,10 +221,19 @@ static int  mxt_getreg(FAR struct mxt_dev_s *priv, uint16_t regaddr,
 static int  mxt_putreg(FAR struct mxt_dev_s *priv, uint16_t regaddr,
               FAR const uint8_t *buffer, size_t buflen);
 
-/* MXT object access */
+/* MXT object/message access */
 
 static FAR struct mxt_object_s *mxt_object(FAR struct mxt_dev_s *priv,
               uint8_t type);
+static int mxt_getmessage(FAR struct mxt_dev_s *priv,
+              FAR struct mxt_msg_s *msg);
+static int mxt_putobject(FAR struct mxt_dev_s *priv, uint8_t type,
+              uint8_t offset, uint8_t value);
+#if 0 /* Not used */
+static int mxt_getobject(FAR struct mxt_dev_s *priv, uint8_t type,
+              uint8_t offset, FAR uint8_t *value);
+#endif
+static int  mxt_flushmsgs(FAR struct mxt_dev_s *priv);
 
 /* Poll support */
 
@@ -233,7 +271,6 @@ static int  mxt_poll(FAR struct file *filep, struct pollfd *fds, bool setup);
 
 static int  mxt_getinfo(struct mxt_dev_s *priv);
 static int  mxt_getobjtab(FAR struct mxt_dev_s *priv);
-static int  mxt_chghigh(FAR struct mxt_dev_s *priv);
 static int  mxt_hwinitialize(FAR struct mxt_dev_s *priv);
 
 /****************************************************************************
@@ -267,34 +304,65 @@ static int mxt_getreg(FAR struct mxt_dev_s *priv, uint16_t regaddr,
 {
   struct i2c_msg_s msg[2];
   uint8_t addrbuf[2];
+  int retries;
   int ret;
 
-  /* Set up to write the address */
+  /* Try up to three times to read the register */
 
-  addrbuf[0]    = regaddr & 0xff;
-  addrbuf[1]    = (regaddr >> 8) & 0xff;
-
-  msg[0].addr   = priv->lower->address;
-  msg[0].flags  = 0;
-  msg[0].buffer = addrbuf;
-  msg[0].length = 2;
-
-  /* Followed by the read data */
-
-  msg[1].addr   = priv->lower->address;
-  msg[1].flags  = I2C_M_READ;
-  msg[1].buffer = buffer;
-  msg[1].length = buflen;
-
-  /* Read the register data.  The returned value is the number messages
-   * completed.
-   */
-
-  ret = I2C_TRANSFER(priv->i2c, msg, 2);
-  if (ret < 0)
+  for (retries = 1; retries <= 3; retries++)
     {
-      idbg("ERROR: I2C_TRANSFER failed: %d\n", ret);
+      ivdbg("retries=%d regaddr=%04x buflen=%d\n", retries, regaddr, buflen);
+
+      /* Set up to write the address */
+
+      addrbuf[0]    = regaddr & 0xff;
+      addrbuf[1]    = (regaddr >> 8) & 0xff;
+
+      msg[0].addr   = priv->lower->address;
+      msg[0].flags  = 0;
+      msg[0].buffer = addrbuf;
+      msg[0].length = 2;
+
+      /* Followed by the read data */
+
+      msg[1].addr   = priv->lower->address;
+      msg[1].flags  = I2C_M_READ;
+      msg[1].buffer = buffer;
+      msg[1].length = buflen;
+
+      /* Read the register data.  The returned value is the number messages
+       * completed.
+       */
+
+      ret = I2C_TRANSFER(priv->i2c, msg, 2);
+      if (ret < 0)
+        {
+#ifdef CONFIG_I2C_RESET
+          /* Perhaps the I2C bus is locked up?  Try to shake the bus free */
+
+          idbg("WARNING: I2C_TRANSFER failed: %d ... Resetting\n", ret);
+
+          ret = up_i2creset(priv->i2c);
+          if (ret < 0)
+            {
+              idbg("ERROR: up_i2creset failed: %d\n", ret);
+              break;
+            }
+#else
+          idbg("ERROR: I2C_TRANSFER failed: %d\n", ret);
+#endif
+        }
+      else
+        {
+          /* The I2C transfer was successful... break out of the loop and
+           * return the success indication.
+           */
+
+          break;
+        }
     }
+
+  /* Return the last status returned by I2C_TRANSFER */
 
   return ret;
 }
@@ -308,34 +376,64 @@ static int mxt_putreg(FAR struct mxt_dev_s *priv, uint16_t regaddr,
 {
   struct i2c_msg_s msg[2];
   uint8_t addrbuf[2];
+  int retries;
   int ret;
 
-  /* Set up to write the address */
+  /* Try up to three times to read the register */
 
-  addrbuf[0]    = regaddr & 0xff;
-  addrbuf[1]    = (regaddr >> 8) & 0xff;
-
-  msg[0].addr   = priv->lower->address;
-  msg[0].flags  = 0;
-  msg[0].buffer = addrbuf;
-  msg[0].length = 2;
-
-  /* Followed by the write data (with no repeated start) */
-
-  msg[1].addr   = priv->lower->address;
-  msg[1].flags  = I2C_M_NORESTART;
-  msg[1].buffer = (FAR uint8_t *)buffer;
-  msg[1].length = buflen;
-
-  /* Read the register data.  The returned value is the number messages
-   * completed.
-   */
-
-  ret = I2C_TRANSFER(priv->i2c, msg, 2);
-  if (ret < 0)
+  for (retries = 1; retries <= 3; retries++)
     {
-      idbg("ERROR: I2C_TRANSFER failed: %d\n", ret);
+      ivdbg("retries=%d regaddr=%04x buflen=%d\n", retries, regaddr, buflen);
+
+      /* Set up to write the address */
+
+      addrbuf[0]    = regaddr & 0xff;
+      addrbuf[1]    = (regaddr >> 8) & 0xff;
+
+      msg[0].addr   = priv->lower->address;
+      msg[0].flags  = 0;
+      msg[0].buffer = addrbuf;
+      msg[0].length = 2;
+
+      /* Followed by the write data (with no repeated start) */
+
+      msg[1].addr   = priv->lower->address;
+      msg[1].flags  = I2C_M_NORESTART;
+      msg[1].buffer = (FAR uint8_t *)buffer;
+      msg[1].length = buflen;
+
+      /* Write the register data.  The returned value is the number messages
+       * completed.
+       */
+
+      ret = I2C_TRANSFER(priv->i2c, msg, 2);
+      if (ret < 0)
+        {
+#ifdef CONFIG_I2C_RESET
+          /* Perhaps the I2C bus is locked up?  Try to shake the bus free */
+
+          idbg("WARNING: I2C_TRANSFER failed: %d ... Resetting\n", ret);
+
+          ret = up_i2creset(priv->i2c);
+          if (ret < 0)
+            {
+              idbg("ERROR: up_i2creset failed: %d\n", ret);
+            }
+#else
+          idbg("ERROR: I2C_TRANSFER failed: %d\n", ret);
+#endif
+        }
+      else
+        {
+          /* The I2C transfer was successful... break out of the loop and
+           * return the success indication.
+           */
+
+          break;
+        }
     }
+
+  /* Return the last status returned by I2C_TRANSFER */
 
   return ret;
 }
@@ -378,8 +476,9 @@ static int mxt_getmessage(FAR struct mxt_dev_s *priv,
   uint16_t regaddr;
 
   object = mxt_object(priv, MXT_GEN_MESSAGE_T5);
-  if (!object)
+  if (object == NULL)
     {
+      idbg("ERROR: mxt_object failed\n");
       return -EINVAL;
     }
 
@@ -399,13 +498,76 @@ static int mxt_putobject(FAR struct mxt_dev_s *priv, uint8_t type,
   uint16_t regaddr;
 
   object = mxt_object(priv, type);
-  if (!object || offset >= object->size + 1)
+  if (object == NULL || offset >= object->size + 1)
     {
       return -EINVAL;
     }
 
   regaddr = MXT_GETUINT16(object->addr);
-  return mxt_putreg(priv, regaddr + offset, (FAR const uint8_t *)&value, 1);
+  return mxt_putreg(priv, regaddr + offset, &value, 1);
+}
+
+/****************************************************************************
+ * Name: mxt_getobject
+ ****************************************************************************/
+
+#if 0 /* Not used */
+static int mxt_getobject(FAR struct mxt_dev_s *priv, uint8_t type,
+                         uint8_t offset, FAR uint8_t *value)
+{
+  FAR struct mxt_object_s *object;
+  uint16_t regaddr;
+
+  object = mxt_object(priv, type);
+  if (object == NULL || offset >= object->size + 1)
+    {
+      return -EINVAL;
+    }
+
+  regaddr = MXT_GETUINT16(object->addr);
+  return mxt_getreg(priv, regaddr + offset, value, 1);
+}
+#endif
+
+/****************************************************************************
+ * Name: mxt_flushmsgs
+ *
+ *   Clear any pending messages be reading messages until there are no
+ *   pending messages.  This will force the CHG pin to the high state and
+ *   prevent spurious initial interrupts.
+ *
+ ****************************************************************************/
+
+static int mxt_flushmsgs(FAR struct mxt_dev_s *priv)
+{
+  struct mxt_msg_s msg;
+  int retries = 16;
+  int ret;
+
+  /* Read dummy message until there are no more to read (or until we have
+   * tried 10 times).
+   */
+
+  do
+    {
+      ret = mxt_getmessage(priv, &msg);
+      if (ret < 0)
+        {
+          idbg("ERROR: mxt_getmessage failed: %d\n", ret);
+          return ret;
+        }
+    }
+  while (msg.id != 0xff && --retries > 0);
+
+  /* Complain if we exceed the retry limit */
+
+  if (retries <= 0)
+    {
+      idbg("ERROR: Failed to clear messages: ID=%02x\n", msg.id);
+      return -EBUSY;
+    }
+
+  return OK;
 }
 
 /****************************************************************************
@@ -630,23 +792,59 @@ static void mxt_touch_event(FAR struct mxt_dev_s *priv,
   ivdbg("ndx=%u status=%02x pos(%u,%u) area=%u pressure=%u\n",
         ndx, status, x, y, area, pressure);
 
+  /* The normal sequence that we would see for a touch would be something
+   * like:
+   *
+   *   1. MXT_DETECT + MXT_PRESS
+   *   2. MXT_DETECT + MXT_AMP
+   *   3. MXT_DETECT + MXT_MOVE + MXT_AMP
+   *   4. MXT_RELEASE
+   *
+   * So we really only need to check MXT_DETECT to drive this state machine.
+   */
+
   /* Is this a loss of contact? */
 
   sample = &priv->sample[ndx];
   if ((status & MXT_DETECT) == 0)
     {
-      /* Ignore the event if the if there was no contact:
+      /* Ignore the event if there was no contact to be lost:
        *
-       *   CONTACT_NONE = No touch and already reported
-       *   CONTACT_LOST   = No touch, but not reported)
+       *   CONTACT_NONE = No touch and loss-of-contact already reported
+       *   CONTACT_LOST = No touch and unreported loss-of-contact.
        */
 
       if (sample->contact == CONTACT_NONE)
         {
-          goto errout;
+          /* Return without posting any event */
+
+          return;
         }
 
+      /* State is one of CONTACT_NEW, CONTACT_MOVE, CONTACT_REPORT or
+       * CONTACT_LOST.
+       *
+       * NOTE: Here we do not check for these other states because there is
+       * not much that can be done anyway.  The transition to CONTACK_LOST
+       * really only makes sense if the preceding state was CONTACT_REPORT.
+       * If we were in (unreported) CONTACT_NEW or CONTACT_MOVE states, then
+       * this will overwrite that event and it will not be reported.  This
+       * opens the possibility for contact lost reports when no contact was
+       * ever reported.
+       *
+       * We could improve this be leaving the unreported states in place,
+       * remembering that the contact was lost, and then reporting the loss-
+       * of-contact after touch state is reported.
+       */
+
       sample->contact = CONTACT_LOST;
+
+      /* Reset the last position so that we guarantee that the next position
+       * will pass the thresholding test.
+       */
+
+      sample->lastx = INVALID_POSITION;
+      sample->lasty = INVALID_POSITION;
     }
   else
     {
@@ -669,32 +867,50 @@ static void mxt_touch_event(FAR struct mxt_dev_s *priv,
       sample->pressure = pressure;
       sample->valid    = true;
 
-      /* If the last loss-of-contact event has not been processed yet, then
-       * let's bump up the touch identifier and hope that the client is smart
-       * enough to infer the loss-of-contact event for the preceding touch.
+      /* If this is not the first touch report, then report it as a move:
+       * Same contact, same ID, but with a new, updated position.
+       * The CONTACT_REPORT state means that a contacted has been detected,
+       * but all contact events have been successfully reported.
        */
 
-      if (sample->contact == CONTACT_LOST)
+      if (sample->contact == CONTACT_REPORT)
         {
-           priv->id++;
-        }
+          uint16_t xdiff;
+          uint16_t ydiff;
 
-      /* If this is not the first touch report, then report it a move:
-       * Same contact, same ID, but a potentially new position.  If
-       * The move event has not been reported, then just overwrite the
-       * move.  That is harmless.
-       */
-
-      if (sample->contact == CONTACT_REPORT ||
-          sample->contact == CONTACT_MOVE)
-        {
-          /* Not a new contact.  Indicate a contact move event */
-
-          sample->contact = CONTACT_MOVE;
-
-          /* This state will be set to CONTACT_REPORT after it
-           * been reported.
+          /* Not a new contact.  Check if the new measurements represent a
+           * non-trivial change in position.  A trivial change is detected
+           * by comparing the change in position since the last report
+           * against configurable threshold values.
+           *
+           * REVISIT:  Should a large change in pressure also generate a
+           * event?
            */
+
+          xdiff = x > sample->lastx ? (x - sample->lastx) : (sample->lastx - x);
+          ydiff = y > sample->lasty ? (y - sample->lasty) : (sample->lasty - y);
+
+          /* Check the thresholds */
+
+          if (xdiff >= CONFIG_MXT_THRESHX || ydiff >= CONFIG_MXT_THRESHY)
+            {
+              /* Report a contact move event.  This state will be set back
+               * to CONTACT_REPORT after it been reported.
+               */
+
+              sample->contact = CONTACT_MOVE;
+
+              /* Update the last position for next threshold calculations */
+
+              sample->lastx   = x;
+              sample->lasty   = y;
+            }
+          else
+            {
+              /* Bail without reporting anything for this event */
+
+              return;
+            }
         }
 
       /* If we have seen this contact before but it has not yet been
@@ -702,10 +918,11 @@ static void mxt_touch_event(FAR struct mxt_dev_s *priv,
        * data.
        *
        * This the state must be one of CONTACT_NONE or CONTACT_LOST (see
-       * above) and we have a new contact with a new ID>
+       * above) and we have a new contact with a new ID.
        */
 
-      else if (sample->contact != CONTACT_NEW)
+      else if (sample->contact != CONTACT_NEW &&
+               sample->contact != CONTACT_MOVE)
         {
           /* First contact.  Save the contact event and assign a new
            * ID to the contact.
@@ -713,6 +930,11 @@ static void mxt_touch_event(FAR struct mxt_dev_s *priv,
 
           sample->contact = CONTACT_NEW;
           sample->id      = priv->id++;
+
+          /* Update the last position for next threshold calculations */
+
+          sample->lastx   = x;
+          sample->lasty   = y;
 
           /* This state will be set to CONTACT_REPORT after it
            * been reported.
@@ -726,11 +948,6 @@ static void mxt_touch_event(FAR struct mxt_dev_s *priv,
 
   priv->event = true;
   mxt_notify(priv);
-
-  /* Exit, re-enabling maXTouch interrupts */
-
-errout:
-  priv->lower->enable(priv->lower, true);
 }
 
 /****************************************************************************
@@ -743,6 +960,8 @@ static void mxt_worker(FAR void *arg)
   FAR const struct mxt_lower_s *lower;
   struct mxt_msg_s msg;
   uint8_t id;
+  int retries;
+  int ret;
 
   ASSERT(priv != NULL);
 
@@ -753,16 +972,27 @@ static void mxt_worker(FAR void *arg)
   lower = priv->lower;
   DEBUGASSERT(lower != NULL);
 
+  /* Get exclusive access to the MXT driver data structure */
+
+  do
+    {
+      ret = sem_wait(&priv->devsem);
+      DEBUGASSERT(ret == 0 || errno == EINTR);
+    }
+  while (ret < 0);
+
   /* Loop, processing each message from the maXTouch */
 
+  retries = 0;
   do
     {
       /* Retrieve the next message from the maXTouch */
 
-      if (mxt_getmessage(priv, &msg))
+      ret = mxt_getmessage(priv, &msg);
+      if (ret < 0)
         {
-          idbg("ERROR: Failed to read msg\n");
-          return;
+          idbg("ERROR: mxt_getmessage failed: %d\n", ret);
+          goto errout_with_semaphore;
         }
 
       id = msg.id;
@@ -782,6 +1012,8 @@ static void mxt_worker(FAR void *arg)
 
           ivdbg("T6: status: %02x checksum: %06lx\n",
                 status, (unsigned long)chksum);
+
+          retries = 0;
         }
       else
 #endif
@@ -791,6 +1023,7 @@ static void mxt_worker(FAR void *arg)
       if (id >= priv->t9idmin && id <= priv->t9idmax)
         {
           mxt_touch_event(priv, &msg, id - priv->t9idmin);
+          retries = 0;
         }
 
 #ifdef CONFIG_MXT_BUTTONS
@@ -799,18 +1032,34 @@ static void mxt_worker(FAR void *arg)
       else if (msg.id == priv->t19id)
         {
           mxt_button_event(priv, &msg);
+          retries = 0;
         }
 #endif
-      /* Any others ignored */
 
-      else
+      /* 0xff marks the end of the messages; any other message IDs are ignored
+       * (after complaining a little).
+       */
+
+      else if (msg.id != 0xff)
         {
           ivdbg("Ignored: id=%u message={%02x %02x %02x %02x %02x %02x %02x}\n",
                 msg.id, msg.body[0], msg.body[1], msg.body[2], msg.body[3],
                 msg.body[4], msg.body[5], msg.body[6]);
+
+          retries++;
         }
     }
-  while (id != 0xff);
+  while (id != 0xff && retries < 16);
+
+errout_with_semaphore:
+  /* Release our lock on the MXT device */
+
+  sem_post(&priv->devsem);
+
+  /* Acknowledge and re-enable maXTouch interrupts */
+
+  MXT_CLEAR(lower);
+  MXT_ENABLE(lower);
 }
 
 /****************************************************************************
@@ -830,7 +1079,7 @@ static int mxt_interrupt(FAR const struct mxt_lower_s *lower, FAR void *arg)
 
   /* Disable further interrupts */
 
-  lower->enable(lower, false);
+  MXT_DISABLE(lower);
 
   /* Transfer processing to the worker thread.  Since maXTouch interrupts are
    * disabled while the work is pending, no special action should be required
@@ -885,6 +1134,7 @@ static int mxt_open(FAR struct file *filep)
     {
       /* More than 255 opens; uint8_t overflows to zero */
 
+      idbg("ERROR: Too many opens: %d\n", priv->crefs);
       ret = -EMFILE;
       goto errout_with_sem;
     }
@@ -897,7 +1147,29 @@ static int mxt_open(FAR struct file *filep)
     {
       /* Touch enable */
 
-      mxt_putobject(priv, MXT_TOUCH_MULTI_T9, MXT_TOUCH_CTRL, 0x83);
+      ret = mxt_putobject(priv, MXT_TOUCH_MULTI_T9, MXT_TOUCH_CTRL, 0x83);
+      if (ret < 0)
+        {
+          idbg("ERROR: Failed to enable touch: %d\n", ret);
+          goto errout_with_sem;
+        }
+
+      /* Clear any pending messages by reading all messages.  This will
+       * force the CHG interrupt pin to the high state and prevent spurious
+       * interrupts when they are enabled.
+       */
+
+      ret = mxt_flushmsgs(priv);
+      if (ret < 0)
+        {
+          idbg("ERROR: mxt_flushmsgs failed: %d\n", ret);
+          mxt_putobject(priv, MXT_TOUCH_MULTI_T9, MXT_TOUCH_CTRL, 0);
+          goto errout_with_sem;
+        }
+
+      /* Enable touch interrupts */
+
+      MXT_ENABLE(priv->lower);
     }
 
   /* Save the new open count on success */
@@ -915,9 +1187,9 @@ errout_with_sem:
 
 static int mxt_close(FAR struct file *filep)
 {
-  FAR struct inode         *inode;
+  FAR struct inode *inode;
   FAR struct mxt_dev_s *priv;
-  int                       ret;
+  int ret;
 
   DEBUGASSERT(filep);
   inode = filep->f_inode;
@@ -945,9 +1217,17 @@ static int mxt_close(FAR struct file *filep)
     {
       if (--priv->crefs < 1)
         {
+          /* Disable touch interrupts */
+
+          MXT_ENABLE(priv->lower);
+
           /* Touch disable */
 
-          mxt_putobject(priv, MXT_TOUCH_MULTI_T9, MXT_TOUCH_CTRL, 0);
+          ret = mxt_putobject(priv, MXT_TOUCH_MULTI_T9, MXT_TOUCH_CTRL, 0);
+          if (ret < 0)
+            {
+              idbg("ERROR: Failed to disable touch: %d\n", ret);
+            }
         }
     }
 
@@ -1053,7 +1333,7 @@ static ssize_t mxt_read(FAR struct file *filep, FAR char *buffer, size_t len)
           sample->contact == CONTACT_MOVE)
         {
           int newcount    = ncontacts + 1;
-          ssize_t newsize = SIZEOF_TOUCH_SAMPLE_S(ncontacts);
+          ssize_t newsize = SIZEOF_TOUCH_SAMPLE_S(newcount);
 
           /* Would this sample exceed the buffer size provided by the
            * caller?
@@ -1142,16 +1422,18 @@ static ssize_t mxt_read(FAR struct file *filep, FAR char *buffer, size_t len)
                 }
               else
                 {
-                  if (sample->contact == CONTACT_REPORT)
+                  /* We have contact.  Is it the first contact? */
+
+                  if (sample->contact == CONTACT_NEW)
                     {
-                      /* First loss of contact */
+                      /* Yes.. first contact. */
 
                       point->flags = TOUCH_DOWN | TOUCH_ID_VALID |
                                      TOUCH_POS_VALID;
                     }
                   else /* if (sample->contact == CONTACT_MOVE) */
                     {
-                      /* Movement of the same contact */
+                      /* No.. then it must be movement of the same contact */
 
                       point->flags = TOUCH_MOVE | TOUCH_ID_VALID |
                                      TOUCH_POS_VALID;
@@ -1384,6 +1666,7 @@ static int mxt_getobjtab(FAR struct mxt_dev_s *priv)
                    tabsize);
   if (ret < 0)
     {
+      idbg("ERROR: Failed to object table size: %d\n", ret);
       return ret;
     }
 
@@ -1406,7 +1689,7 @@ static int mxt_getobjtab(FAR struct mxt_dev_s *priv)
           idmax  = 0;
         }
 
-      ivdbg("%2d. Type %d Start %d size: %d instances: %d IDs: %u-%u\n",
+      ivdbg("%2d. type %2d addr %04x size: %d instances: %d IDs: %u-%u\n",
             i, object->type, MXT_GETUINT16(object->addr), object->size + 1,
             object->ninstances + 1, idmin, idmax);
 
@@ -1437,39 +1720,6 @@ static int mxt_getobjtab(FAR struct mxt_dev_s *priv)
 }
 
 /****************************************************************************
- * Name: mxt_chghigh
- ****************************************************************************/
-
-static int mxt_chghigh(FAR struct mxt_dev_s *priv)
-{
-  struct mxt_msg_s msg;
-  int retries = 10;
-  int ret;
-
-  /* Read dummy message to make high CHG pin */
-
-  do
-    {
-      ret = mxt_getmessage(priv, &msg);
-      if (ret < 0)
-        {
-          return ret;
-        }
-    }
-  while (msg.id != 0xff && --retries > 0);
-
-  /* Check for a timeout */
-
-  if (retries <= 0)
-    {
-      idbg("ERROR: CHG pin did not clear\n");
-      return -EBUSY;
-    }
-
-  return 0;
-}
-
-/****************************************************************************
  * Name: mxt_hwinitialize
  ****************************************************************************/
 
@@ -1477,8 +1727,6 @@ static int mxt_hwinitialize(FAR struct mxt_dev_s *priv)
 {
   struct mxt_info_s *info = &priv->info;
   unsigned int nslots;
-  uint16_t xres;
-  uint16_t yres;
   uint8_t regval;
   int ret;
 
@@ -1497,8 +1745,8 @@ static int mxt_hwinitialize(FAR struct mxt_dev_s *priv)
 
   /* Allocate memory for the object table */
 
-  priv->objtab = kzalloc(info->nobjects * sizeof(struct mxt_object_s));
-  if (priv->objtab != NULL)
+  priv->objtab = kmm_zalloc(info->nobjects * sizeof(struct mxt_object_s));
+  if (priv->objtab == NULL)
     {
       idbg("ERROR: Failed to allocate object table\n");
       return -ENOMEM;
@@ -1514,7 +1762,13 @@ static int mxt_hwinitialize(FAR struct mxt_dev_s *priv)
 
   /* Perform a soft reset */
 
-  mxt_putobject(priv, MXT_GEN_COMMAND_T6, MXT_COMMAND_RESET, 1);
+  ret = mxt_putobject(priv, MXT_GEN_COMMAND_T6, MXT_COMMAND_RESET, 1);
+  if (ret < 0)
+    {
+      idbg("ERROR: Soft reset failed: %d\n", ret);
+      goto errout_with_objtab;
+    }
+
   usleep(MXT_RESET_TIME);
 
   /* Update matrix size in the info structure */
@@ -1522,6 +1776,7 @@ static int mxt_hwinitialize(FAR struct mxt_dev_s *priv)
   ret = mxt_getreg(priv, MXT_MATRIX_X_SIZE, (FAR uint8_t *)&regval, 1);
   if (ret < 0)
     {
+      idbg("ERROR: Failed to get X size: %d\n", ret);
       goto errout_with_objtab;
     }
 
@@ -1530,32 +1785,17 @@ static int mxt_hwinitialize(FAR struct mxt_dev_s *priv)
   ret = mxt_getreg(priv, MXT_MATRIX_Y_SIZE, (FAR uint8_t *)&regval, 1);
   if (ret < 0)
     {
+      idbg("ERROR: Failed to get Y size: %d\n", ret);
       goto errout_with_objtab;
     }
 
   info->ysize = regval;
 
-  ivdbg("family: %u variant: %u version: %u.%u.%02x\n",
-        info->family, info->variant, info->version >> 4, info->version & 0xf,
+  ivdbg("Family: %u variant: %u version: %u.%u.%02x\n",
+        info->family, info->variant, info->version >> 4, info->version & 0x0f,
         info->build);
   ivdbg("Matrix size: (%u,%u) objects: %u\n",
         info->xsize, info->ysize, info->nobjects);
-
-  /* Set up the touchscreen resolution */
-
-  xres = info->xsize - 1;
-  yres = info->ysize - 1;
-
-  if (priv->lower->swapxy)
-    {
-      priv->xres = yres;
-      priv->yres = xres;
-    }
-  else
-    {
-      priv->xres = xres;
-      priv->yres = yres;
-    }
 
   /* How many multi touch "slots" */
 
@@ -1567,29 +1807,21 @@ static int mxt_hwinitialize(FAR struct mxt_dev_s *priv)
   /* Allocate a place to hold sample data for each slot */
 
   priv->sample = (FAR struct mxt_sample_s *)
-    kzalloc(nslots * sizeof(struct mxt_sample_s));
-  if (!priv->sample)
+    kmm_zalloc(nslots * sizeof(struct mxt_sample_s));
+  if (priv->sample == NULL)
     {
       idbg("ERROR: Failed to allocate object table\n");
       goto errout_with_objtab;
     }
 
-  /* Force the CHG pin to the high state */
-
-  ret = mxt_chghigh(priv);
-  if (ret < 0)
-    {
-      goto errout_with_sample;
-    }
-
   return OK;
 
-errout_with_sample:
-  kfree(priv->sample);
-  priv->sample = NULL;
+  /* Error exits */
+
 errout_with_objtab:
-  kfree(priv->objtab);
+  kmm_free(priv->objtab);
   priv->objtab = NULL;
+
   return ret;
 }
 
@@ -1631,8 +1863,8 @@ int mxt_register(FAR struct i2c_dev_s *i2c,
 
   /* Create and initialize a maXTouch device driver instance */
 
-  priv = (FAR struct mxt_dev_s *)kzalloc(sizeof(struct mxt_dev_s));
-  if (!priv)
+  priv = (FAR struct mxt_dev_s *)kmm_zalloc(sizeof(struct mxt_dev_s));
+  if (priv == NULL)
     {
       idbg("ERROR: Failed allocate device structure\n");
       return -ENOMEM;
@@ -1650,7 +1882,7 @@ int mxt_register(FAR struct i2c_dev_s *i2c,
   /* Make sure that interrupts are disabled */
 
   MXT_CLEAR(lower);
-  MXT_ENABLE(lower);
+  MXT_DISABLE(lower);
 
   /* Attach the interrupt handler */
 
@@ -1682,32 +1914,22 @@ int mxt_register(FAR struct i2c_dev_s *i2c,
       goto errout_with_hwinit;
     }
 
-  /* Schedule work to perform the initial sampling and to set the data
-   * availability conditions. */
-
-  ret = work_queue(HPWORK, &priv->work, mxt_worker, priv, 0);
-  if (ret != 0)
-    {
-      idbg("Failed to queue work: %d\n", ret);
-      goto errout_with_dev;
-    }
-
-  /* And return success */
+  /* And return success.  MXT interrupts will not be enable until the
+   * MXT device has been opened (see mxt_open).
+   */
 
   return OK;
 
   /* Error clean-up exits */
 
-errout_with_dev:
-  (void)unregister_driver(devname);
 errout_with_hwinit:
-  kfree(priv->objtab);
-  kfree(priv->sample);
+  kmm_free(priv->objtab);
+  kmm_free(priv->sample);
 errout_with_irq:
   MXT_DETACH(lower);
 errout_with_priv:
   sem_destroy(&priv->devsem);
   sem_destroy(&priv->waitsem);
-  kfree(priv);
+  kmm_free(priv);
   return ret;
 }

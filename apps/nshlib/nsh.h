@@ -104,6 +104,56 @@
 #  define CONFIG_NSH_TMPDIR "/tmp"
 #endif
 
+/* Networking support.  Make sure that all non-boolean configuration
+ * settings have some value.
+ */
+
+#ifndef CONFIG_NSH_IPADDR
+#  define CONFIG_NSH_IPADDR    0x0a000002
+#endif
+
+#ifndef CONFIG_NSH_DRIPADDR
+#  define CONFIG_NSH_DRIPADDR  0x0a000001
+#endif
+
+#ifndef CONFIG_NSH_NETMASK
+#  define CONFIG_NSH_NETMASK   0xffffff00
+#endif
+
+#ifndef CONFIG_NSH_DNSIPADDR
+#  define CONFIG_NSH_DNSIPADDR CONFIG_NSH_DRIPADDR
+#endif
+
+#ifndef CONFIG_NSH_MACADDR
+#  define CONFIG_NSH_MACADDR   0x00e0deadbeef
+#endif
+
+#ifndef CONFIG_NET
+#  undef CONFIG_NSH_ARCHMAC
+#endif
+
+#if !defined(CONFIG_NSH_NETINIT_THREAD) || !defined(CONFIG_ARCH_PHY_INTERRUPT) || \
+    !defined(CONFIG_NETDEV_PHY_IOCTL) || !defined(CONFIG_NET_UDP) || \
+     defined(CONFIG_DISABLE_SIGNALS)
+#  undef CONFIG_NSH_NETINIT_MONITOR
+#endif
+
+#ifndef CONFIG_NSH_NETINIT_RETRYMSEC
+#  define CONFIG_NSH_NETINIT_RETRYMSEC 2000
+#endif
+
+#ifndef CONFIG_NSH_NETINIT_SIGNO
+#  define CONFIG_NSH_NETINIT_SIGNO 18
+#endif
+
+#ifndef CONFIG_NSH_NETINIT_THREAD_STACKSIZE
+#  define CONFIG_NSH_NETINIT_THREAD_STACKSIZE 1568
+#endif
+
+#ifndef CONFIG_NSH_NETINIT_THREAD_PRIORITY
+#  define CONFIG_NSH_NETINIT_THREAD_PRIORITY 100
+#endif
+
 /* Telnetd requires networking support */
 
 #ifndef CONFIG_NET
@@ -496,13 +546,37 @@
 #    define IOBUFFERSIZE (PATH_MAX + 1)
 #endif
 
-/* Certain commands are not availalbe in a kernel build because they depend
- * on interfaces that are not exported by the kernel.
+/* Certain commands are not available in a kernel builds because they depend
+ * on interfaces that are not exported by the kernel.  These are actually
+ * bugs that need to be fixed but for now the commands are simply disabled.
+ * There are three classes of fixes required:
+ *
+ * - Some of these interfaces are inherently internal to the OS (such as
+ *   sched_foreach and foreach_mountpoint) and should never be made
+ *   available to user applications as OS interfaces.  For these, the long
+ *   range solution to restoring the functionality will be to support procfs
+ *   entries the provide the necessary interfaces.
+ * - Other interfaces are more standard and for these there probably should
+ *   be new system calls to support the OS interface.  Such interfaces
+ *   include things like losetup, loteardown, and mkrd.
+ * - Other interfaces simply need to be moved out of the OS and into the C
+ *   library where they will become accessible to application code.  Such
+ *   interfaces include mkfatfs.
  */
 
-#ifdef CONFIG_NUTTX_KERNEL
-#  undef CONFIG_NSH_DISABLE_DF
+#if defined(CONFIG_BUILD_PROTECTED) || defined(CONFIG_BUILD_KERNEL)
+#  undef CONFIG_NSH_DISABLE_PS          /* 'ps' depends on sched_foreach */
+#  define CONFIG_NSH_DISABLE_PS 1
+#  undef CONFIG_NSH_DISABLE_DF          /* 'df' depends on foreach_mountpoint */
 #  define CONFIG_NSH_DISABLE_DF 1
+#  undef CONFIG_NSH_DISABLE_DD          /* 'dd' depends on bchlib_* interfaces */
+#  define CONFIG_NSH_DISABLE_DD 1
+#  undef CONFIG_NSH_DISABLE_LOSETUP     /* 'losetup' depends on losetup/loteardown */
+#  define CONFIG_NSH_DISABLE_LOSETUP 1
+#  undef CONFIG_NSH_DISABLE_MKFATFS     /* 'mkfatfs' depends on mkfatfs interface */
+#  define CONFIG_NSH_DISABLE_MKFATFS 1
+#  undef CONFIG_NSH_DISABLE_MKRD        /* 'mkrd' depends on ramdisk_register */
+#  define CONFIG_NSH_DISABLE_MKRD 1
 #endif
 
 /****************************************************************************
@@ -672,6 +746,10 @@ int nsh_archinitialize(void);
 #  define nsh_archinitialize() (-ENOSYS)
 #endif
 
+#ifdef CONFIG_NSH_ARCHMAC
+int nsh_arch_macaddress(uint8_t *mac);
+#endif
+
 /* Basic session and message handling */
 
 struct console_stdio_s;
@@ -747,10 +825,8 @@ void nsh_usbtrace(void);
   int cmd_lbracket(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
 
-#ifndef CONFIG_DISABLE_CLOCK
-#  if defined (CONFIG_RTC) && !defined(CONFIG_NSH_DISABLE_DATE)
-   int cmd_date(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
-#  endif
+#if defined (CONFIG_RTC) && !defined(CONFIG_NSH_DISABLE_DATE)
+  int cmd_date(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
 
 #if CONFIG_NFILE_DESCRIPTORS > 0
@@ -866,7 +942,7 @@ void nsh_usbtrace(void);
 #    endif
 #  endif
 #  if defined(CONFIG_NET_ICMP) && defined(CONFIG_NET_ICMP_PING) && \
-     !defined(CONFIG_DISABLE_CLOCK) && !defined(CONFIG_DISABLE_SIGNALS)
+     !defined(CONFIG_DISABLE_SIGNALS)
 #    ifndef CONFIG_NSH_DISABLE_PING
         int cmd_ping(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #    endif

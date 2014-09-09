@@ -908,7 +908,7 @@ static void sam_dma_single(uint8_t epno, struct sam_req_s *privreq,
   /* Flush the contents of the DMA buffer to RAM */
 
   buffer = (uintptr_t)&privreq->req.buf[privreq->req.xfrd];
-  cp15_clean_dcache(buffer, buffer + privreq->inflight);
+  arch_clean_dcache(buffer, buffer + privreq->inflight);
 
   /* Set up the DMA */
 
@@ -1567,7 +1567,7 @@ static void sam_req_rddisable(uint8_t epno)
  *     'inflight' field to hold the maximum size of the transfer; but
  *     'inflight' is not used with FIFO transfers.
  *
- *     When the transfer completes, the 'recvsize' paramter must be the
+ *     When the transfer completes, the 'recvsize' parameter must be the
  *     size of the transfer that just completed.   For the case of DMA,
  *     that is the size of the DMA transfer that has just been written to
  *     memory; for the FIFO transfer, recvsize is the number of bytes
@@ -2412,7 +2412,7 @@ static void sam_dma_interrupt(struct sam_usbdev_s *priv, int epno)
 
           DEBUGASSERT(USB_ISEPOUT(privep->ep.eplog));
           buf = &privreq->req.buf[privreq->req.xfrd];
-          cp15_invalidate_dcache((uintptr_t)buf, (uintptr_t)buf + xfrsize);
+          arch_invalidate_dcache((uintptr_t)buf, (uintptr_t)buf + xfrsize);
 
           /* Complete this transfer, return the request to the class
            * implementation, and try to start the next, queue read request.
@@ -2468,7 +2468,7 @@ static void sam_dma_interrupt(struct sam_usbdev_s *priv, int epno)
        */
 
       buf = &privreq->req.buf[privreq->req.xfrd];
-      cp15_invalidate_dcache((uintptr_t)buf, (uintptr_t)buf + xfrsize);
+      arch_invalidate_dcache((uintptr_t)buf, (uintptr_t)buf + xfrsize);
 
       /* Complete this transfer, return the request to the class
        * implementation, and try to start the next, queue read request.
@@ -3476,7 +3476,7 @@ static struct usbdev_req_s *sam_ep_allocreq(struct usbdev_ep_s *ep)
 #endif
   usbtrace(TRACE_EPALLOCREQ, USB_EPNO(ep->eplog));
 
-  privreq = (struct sam_req_s *)kmalloc(sizeof(struct sam_req_s));
+  privreq = (struct sam_req_s *)kmm_malloc(sizeof(struct sam_req_s));
   if (!privreq)
     {
       usbtrace(TRACE_DEVERROR(SAM_TRACEERR_ALLOCFAIL), 0);
@@ -3508,7 +3508,7 @@ static void sam_ep_freereq(struct usbdev_ep_s *ep, struct usbdev_req_s *req)
 #endif
   usbtrace(TRACE_EPFREEREQ, USB_EPNO(ep->eplog));
 
-  kfree(privreq);
+  kmm_free(privreq);
 }
 
 /****************************************************************************
@@ -3524,7 +3524,7 @@ static void *sam_ep_allocbuffer(struct usbdev_ep_s *ep, uint16_t nbytes)
 {
   /* There is not special buffer allocation requirement */
 
-  return kumalloc(nbytes);
+  return kumm_malloc(nbytes);
 }
 #endif
 
@@ -3541,7 +3541,7 @@ static void sam_ep_freebuffer(struct usbdev_ep_s *ep, void *buf)
 {
   /* There is not special buffer allocation requirement */
 
-  kufree(buf);
+  kumm_free(buf);
 }
 #endif
 
@@ -4291,7 +4291,7 @@ static void sam_sw_setup(struct sam_usbdev_s *priv)
   /* Allocate a pool of free DMA transfer descriptors */
 
   priv->dtdpool = (struct sam_dtd_s *)
-    kmemalign(16, CONFIG_SAMA5_UDPHS_NDTDS * sizeof(struct sam_dtd_s));
+    kmm_memalign(16, CONFIG_SAMA5_UDPHS_NDTDS * sizeof(struct sam_dtd_s));
   if (!priv->dtdpool)
      {
       udbg("ERROR: Failed to allocate the DMA transfer descriptor pool\n");

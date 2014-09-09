@@ -52,6 +52,11 @@
  * definitions will configure operational clocking.
  */
 
+/* On-board crystal frequencies */
+
+#define BOARD_MAINOSC_FREQUENCY    (12000000)  /* MAINOSC: 12MHz crystal on-board */
+#define BOARD_SLOWCLK_FREQUENCY    (32768)     /* Slow Clock: 32.768KHz */
+
 #if defined(CONFIG_SAMA5_BOOT_SDRAM)
 /* When booting from SDRAM, NuttX is loaded in SDRAM by an intermediate bootloader.
  * That bootloader had to have already configured the PLL and SDRAM for proper
@@ -325,20 +330,6 @@ extern "C" {
  ************************************************************************************/
 
 void sam_boardinitialize(void);
-
-/************************************************************************************
- * Name: sam_phyirq
- *
- * Description:
- *   This function may be called to register an interrupt handler that will be
- *   called when an interrupt is received from a PHY.
- *
- ************************************************************************************/
-
-#if defined(CONFIG_NET) && (defined(CONFIG_SAMA5_EMACA) || defined(CONFIG_SAMA5_GMAC)) && \
-    defined(CONFIG_SAMA5_PIOE_IRQ)
-xcpt_t sam_phyirq(int intf, xcpt_t irqhandler);
-#endif
 
 /************************************************************************************
  * Name:  sam_ledinit, sam_setled, and sam_setleds

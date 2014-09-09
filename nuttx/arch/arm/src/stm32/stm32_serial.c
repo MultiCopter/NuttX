@@ -66,7 +66,6 @@
 #include "stm32_rcc.h"
 #include "up_arch.h"
 #include "up_internal.h"
-#include "os_internal.h"
 
 /****************************************************************************
  * Definitions
@@ -178,7 +177,7 @@
 /* The DMA buffer size when using RX DMA to emulate a FIFO.
  *
  * When streaming data, the generic serial layer will be called
- * everytime the FIFO receives half this number of bytes.
+ * every time the FIFO receives half this number of bytes.
  */
 
 #  define RXDMA_BUFFER_SIZE   32
@@ -987,13 +986,9 @@ static struct up_dev_s g_uart8priv =
 };
 #endif
 
-/* This table lets us iterate over the configured USARTs.
- *
- * REVISIT:  The following logic is not valid for the STM32F401 which
- * supports 3 USARTS:  USART1, USART2, and USART6.
- */
+/* This table lets us iterate over the configured USARTs */
 
-static struct up_dev_s *uart_devs[STM32_NUSART] =
+static struct up_dev_s * const uart_devs[STM32_NUSART] =
 {
 #ifdef CONFIG_STM32_USART1
   [0] = &g_usart1priv,
@@ -2430,8 +2425,6 @@ static void up_dma_rxcallback(DMA_HANDLE handle, uint8_t status, void *arg)
 }
 #endif
 
-#endif /* HAVE UART */
-
 /****************************************************************************
  * Name: up_pm_notify
  *
@@ -2536,10 +2529,13 @@ static int up_pm_prepare(struct pm_callback_s *cb, enum pm_state_e pmstate)
   return OK;
 }
 #endif
+#endif /* USE_SERIALDRIVER */
 
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+#ifdef USE_SERIALDRIVER
 
 /****************************************************************************
  * Name: up_earlyserialinit
@@ -2736,8 +2732,6 @@ void stm32_serial_dma_poll(void)
  *   Provide priority, low-level access to support OS debug  writes
  *
  ****************************************************************************/
-
-#ifdef USE_SERIALDRIVER
 
 int up_putc(int ch)
 {

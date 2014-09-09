@@ -144,7 +144,7 @@ struct mmcsd_state_s
 #endif
   /* Read-ahead and write buffering support */
 
-#if defined(CONFIG_FS_WRITEBUFFER) || defined(CONFIG_FS_READAHEAD)
+#if defined(CONFIG_DRVR_WRITEBUFFER) || defined(CONFIG_DRVR_READAHEAD)
   struct rwbuffer_s rwbuffer;
 #endif
 };
@@ -203,7 +203,7 @@ static ssize_t mmcsd_readsingle(FAR struct mmcsd_state_s *priv,
 static ssize_t mmcsd_readmultiple(FAR struct mmcsd_state_s *priv,
                  FAR uint8_t *buffer, off_t startblock, size_t nblocks);
 #endif
-#ifdef CONFIG_FS_READAHEAD
+#ifdef CONFIG_DRVR_READAHEAD
 static ssize_t mmcsd_reload(FAR void *dev, FAR uint8_t *buffer,
                  off_t startblock, size_t nblocks);
 #endif
@@ -214,7 +214,7 @@ static ssize_t mmcsd_writesingle(FAR struct mmcsd_state_s *priv,
 static ssize_t mmcsd_writemultiple(FAR struct mmcsd_state_s *priv,
                  FAR const uint8_t *buffer, off_t startblock, size_t nblocks);
 #endif
-#ifdef CONFIG_FS_WRITEBUFFER
+#ifdef CONFIG_DRVR_WRITEBUFFER
 static ssize_t mmcsd_flush(FAR void *dev, FAR const uint8_t *buffer,
                  off_t startblock, size_t nblocks);
 #endif
@@ -1509,6 +1509,7 @@ static ssize_t mmcsd_readmultiple(FAR struct mmcsd_state_s *priv,
 
   SDIO_BLOCKSETUP(priv->dev, priv->blocksize, nblocks);
   SDIO_WAITENABLE(priv->dev, SDIOWAIT_TRANSFERDONE|SDIOWAIT_TIMEOUT|SDIOWAIT_ERROR);
+
 #ifdef CONFIG_SDIO_DMA
   if (priv->dma)
     {
@@ -1570,7 +1571,7 @@ static ssize_t mmcsd_readmultiple(FAR struct mmcsd_state_s *priv,
  *
  ****************************************************************************/
 
-#ifdef CONFIG_FS_READAHEAD
+#ifdef CONFIG_DRVR_READAHEAD
 static ssize_t mmcsd_reload(FAR void *dev, FAR uint8_t *buffer,
                             off_t startblock, size_t nblocks)
 {
@@ -1942,7 +1943,6 @@ static ssize_t mmcsd_writemultiple(FAR struct mmcsd_state_s *priv,
       return ret;
     }
 
-
   /* Wait for the transfer to complete */
 
   ret = mmcsd_eventwait(priv, SDIOWAIT_TIMEOUT|SDIOWAIT_ERROR, nblocks * MMCSD_BLOCK_WDATADELAY);
@@ -1975,12 +1975,12 @@ static ssize_t mmcsd_writemultiple(FAR struct mmcsd_state_s *priv,
  *
  ****************************************************************************/
 
-#if defined(CONFIG_FS_WRITABLE) && defined(CONFIG_FS_WRITEBUFFER)
+#if defined(CONFIG_FS_WRITABLE) && defined(CONFIG_DRVR_WRITEBUFFER)
 static ssize_t mmcsd_flush(FAR void *dev, FAR const uint8_t *buffer,
                            off_t startblock, size_t nblocks)
 {
   FAR struct mmcsd_state_s *priv = (FAR struct mmcsd_state_s *)dev;
-#ifndef CONFIG_MMCSD_MULTIBLOCK_DISABLE
+#ifdef CONFIG_MMCSD_MULTIBLOCK_DISABLE
   size_t block;
   size_t endblock;
 #endif
@@ -2092,7 +2092,7 @@ static ssize_t mmcsd_read(FAR struct inode *inode, unsigned char *buffer,
                           size_t startsector, unsigned int nsectors)
 {
   FAR struct mmcsd_state_s *priv;
-#if !defined(CONFIG_FS_READAHEAD) && defined(CONFIG_MMCSD_MULTIBLOCK_DISABLE)
+#if !defined(CONFIG_DRVR_READAHEAD) && defined(CONFIG_MMCSD_MULTIBLOCK_DISABLE)
   size_t sector;
   size_t endsector;
 #endif
@@ -2107,7 +2107,7 @@ static ssize_t mmcsd_read(FAR struct inode *inode, unsigned char *buffer,
     {
       mmcsd_takesem(priv);
 
-#if defined(CONFIG_FS_READAHEAD)
+#if defined(CONFIG_DRVR_READAHEAD)
       /* Get the data from the read-ahead buffer */
 
       ret = rwb_read(&priv->rwbuffer, startsector, nsectors, buffer);
@@ -2167,7 +2167,7 @@ static ssize_t mmcsd_write(FAR struct inode *inode, FAR const unsigned char *buf
                            size_t startsector, unsigned int nsectors)
 {
   FAR struct mmcsd_state_s *priv;
-#if !defined(CONFIG_FS_WRITEBUFFER) && defined(CONFIG_MMCSD_MULTIBLOCK_DISABLE)
+#if defined(CONFIG_MMCSD_MULTIBLOCK_DISABLE)
   size_t sector;
   size_t endsector;
 #endif
@@ -2179,7 +2179,7 @@ static ssize_t mmcsd_write(FAR struct inode *inode, FAR const unsigned char *buf
 
   mmcsd_takesem(priv);
 
-#if defined(CONFIG_FS_WRITEBUFFER)
+#if defined(CONFIG_DRVR_WRITEBUFFER)
   /* Write the data to the write buffer */
 
   ret = rwb_write(&priv->rwbuffer, startsector, nsectors, buffer);
@@ -2376,7 +2376,7 @@ static void mmcsd_mediachange(FAR void *arg)
   if (SDIO_PRESENT(priv->dev))
     {
       /* No... process the card insertion.  This could cause chaos if we think
-       * that a card is already present and there are mounted filesystems!
+       * that a card is already present and there are mounted file systems!
        * NOTE that mmcsd_probe() will always re-enable callbacks appropriately.
        */
 
@@ -2438,7 +2438,7 @@ static int mmcsd_widebus(FAR struct mmcsd_state_s *priv)
         }
 
       /* Then send ACMD42 with the argument to disconnect the CD/DAT3
-       * pullup
+       * pull-up
        *
        * TODO: May want to disable, then re-enable around data transfers
        * to support card detection"
@@ -2519,7 +2519,7 @@ static int mmcsd_mmcinitialize(FAR struct mmcsd_state_s *priv)
    * slot.
    *
    * Send CMD2, ALL_SEND_CID. This implementation supports only one MMC slot.
-   * If mulitple cards were installed, each card would respond to CMD2 by
+   * If multiple cards were installed, each card would respond to CMD2 by
    * sending its CID (only one card completes the response at a time).  The
    * driver should send CMD2 and assign an RCAs until no response to
    * ALL_SEND_CID is received. CMD2 causes transition to identification state/
@@ -2670,7 +2670,7 @@ static int mmcsd_sdinitialize(FAR struct mmcsd_state_s *priv)
 
   /* Send CMD9, SEND_CSD, in standby state/data-transfer mode to obtain the
    * Card Specific Data (CSD) register.  The argument is the RCA that we
-   * just obtained from CMD3.  The card stays in standy state/data-transfer
+   * just obtained from CMD3.  The card stays in standby state/data-transfer
    * mode.
    */
 
@@ -3087,6 +3087,10 @@ static int mmcsd_probe(FAR struct mmcsd_state_s *priv)
 
               SDIO_CALLBACKENABLE(priv->dev, SDIOMEDIA_EJECTED);
             }
+
+          /* REVISIT: There is a problem here.  If mmcsd_initialize() returns a
+           * failure, then no events are initialized.
+           */
         }
 
       /* In any event, we have probed this card */
@@ -3187,7 +3191,7 @@ static int mmcsd_hwinitialize(FAR struct mmcsd_state_s *priv)
    *
    *  1. Mechanical insertion that can be detected using the WP switch
    *     that is closed when a card is inserted into then SD slot (SD
-   *     "hot insertion capable" card conector only)
+   *     "hot insertion capable" card connector only)
    *  2. Electrical insertion that can be sensed using the pull-up resistor
    *     on CD/DAT3 (both SD/MMC),
    *  3. Or by periodic attempts to initialize the card from software.
@@ -3250,7 +3254,7 @@ static void mmcsd_hwuninitialize(FAR struct mmcsd_state_s *priv)
     {
       mmcsd_removed(priv);
       SDIO_RESET(priv->dev);
-      kfree(priv);
+      kmm_free(priv);
     }
 }
 
@@ -3291,7 +3295,7 @@ int mmcsd_slotinitialize(int minor, FAR struct sdio_dev_s *dev)
 
   /* Allocate a MMC/SD state structure */
 
-  priv = (FAR struct mmcsd_state_s *)kmalloc(sizeof(struct mmcsd_state_s));
+  priv = (FAR struct mmcsd_state_s *)kmm_malloc(sizeof(struct mmcsd_state_s));
   if (priv)
     {
       /* Initialize the MMC/SD state structure */
@@ -3324,7 +3328,7 @@ int mmcsd_slotinitialize(int minor, FAR struct sdio_dev_s *dev)
 
               SDIO_CALLBACKENABLE(priv->dev, SDIOMEDIA_INSERTED);
 
-              fdbg("MMC/SD slot is empty\n");
+              fvdbg("MMC/SD slot is empty\n");
             }
           else
             {
@@ -3335,9 +3339,10 @@ int mmcsd_slotinitialize(int minor, FAR struct sdio_dev_s *dev)
             }
         }
 
-#if defined(CONFIG_FS_WRITEBUFFER) || defined(CONFIG_FS_READAHEAD)
+#if defined(CONFIG_DRVR_WRITEBUFFER) || defined(CONFIG_DRVR_READAHEAD)
       /* Initialize buffering */
 
+#warning "Missing setup of rwbuffer"
       ret = rwb_initialize(&priv->rwbuffer);
       if (ret < 0)
         {
@@ -3362,7 +3367,7 @@ int mmcsd_slotinitialize(int minor, FAR struct sdio_dev_s *dev)
   return OK;
 
 errout_with_buffers:
-#if defined(CONFIG_FS_WRITEBUFFER) || defined(CONFIG_FS_READAHEAD)
+#if defined(CONFIG_DRVR_WRITEBUFFER) || defined(CONFIG_DRVR_READAHEAD)
   rwb_uninitialize(&priv->rwbuffer);
 errout_with_hwinit:
 #endif
@@ -3370,7 +3375,7 @@ errout_with_hwinit:
   return ret;
 
 errout_with_alloc:
-  kfree(priv);
+  kmm_free(priv);
   return ret;
 }
 

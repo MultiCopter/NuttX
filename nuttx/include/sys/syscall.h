@@ -2,7 +2,7 @@
  * include/sys/syscall.h
  * This file contains the system call numbers.
  *
- *   Copyright (C) 2011-2013 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2011-2014 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,9 +47,7 @@
 #  include <stdint.h>
 #endif
 
-/* The content of this file is only meaningful for the case of a kernel build. */
-
-#ifdef CONFIG_NUTTX_KERNEL
+#ifdef CONFIG_LIB_SYSCALL
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -91,11 +89,30 @@
 #define SYS_sem_unlink                 (CONFIG_SYS_RESERVED+19)
 #define SYS_sem_wait                   (CONFIG_SYS_RESERVED+20)
 #define SYS_set_errno                  (CONFIG_SYS_RESERVED+21)
-#define SYS_task_create                (CONFIG_SYS_RESERVED+22)
-#define SYS_task_delete                (CONFIG_SYS_RESERVED+23)
-#define SYS_task_restart               (CONFIG_SYS_RESERVED+24)
-#define SYS_up_assert                  (CONFIG_SYS_RESERVED+25)
-#define __SYS_vfork                    (CONFIG_SYS_RESERVED+26)
+
+/* Task creation APIs based on global entry points cannot be use with
+ * address environments.
+ */
+
+#ifndef CONFIG_ARCH_ADDRENV
+#  define SYS_task_create              (CONFIG_SYS_RESERVED+22)
+#  define __SYS_task_delete            (CONFIG_SYS_RESERVED+23)
+
+/* pgalloc() is only available with address environments with the page
+ * allocator selected.  MMU support from the CPU is also required.
+ */
+
+#elif defined(CONFIG_MM_PGALLOC) && defined(CONFIG_ARCH_USE_MMU)
+#  define SYS_pgalloc                  (CONFIG_SYS_RESERVED+22)
+#  define __SYS_task_delete            (CONFIG_SYS_RESERVED+23)
+#else
+#  define __SYS_task_delete            (CONFIG_SYS_RESERVED+22)
+#endif
+
+#  define SYS_task_delete              __SYS_task_delete
+#  define SYS_task_restart             (__SYS_task_delete+1)
+#  define SYS_up_assert                (__SYS_task_delete+2)
+#  define __SYS_vfork                  (__SYS_task_delete+3)
 
 /* The following can be individually enabled */
 
@@ -173,16 +190,12 @@
  * NuttX configuration.
  */
 
-#ifndef CONFIG_DISABLE_CLOCK
-#  define SYS_clock_systimer           (__SYS_clock+0)
-#  define SYS_clock_getres             (__SYS_clock+1)
-#  define SYS_clock_gettime            (__SYS_clock+2)
-#  define SYS_clock_settime            (__SYS_clock+3)
-#  define SYS_gettimeofday             (__SYS_clock+4)
-#  define __SYS_timers                 (__SYS_clock+5)
-#else
-#  define __SYS_timers                 __SYS_clock
-#endif
+#define SYS_clock_systimer             (__SYS_clock+0)
+#define SYS_clock_getres               (__SYS_clock+1)
+#define SYS_clock_gettime              (__SYS_clock+2)
+#define SYS_clock_settime              (__SYS_clock+3)
+#define SYS_gettimeofday               (__SYS_clock+4)
+#define __SYS_timers                   (__SYS_clock+5)
 
 /* The following are defined only if POSIX timers are supported */
 
@@ -437,6 +450,6 @@ EXTERN const uint8_t g_funcnparms[SYS_nsyscalls];
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* CONFIG_NUTTX_KERNEL */
+#endif /* CONFIG_LIB_SYSCALL */
 #endif /* __INCLUDE_SYS_SYSCALL_H */
 

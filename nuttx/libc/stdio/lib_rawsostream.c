@@ -54,8 +54,9 @@
 static void rawoutstream_putc(FAR struct lib_outstream_s *this, int ch)
 {
   FAR struct lib_rawoutstream_s *rthis = (FAR struct lib_rawoutstream_s *)this;
-  int nwritten;
   char buffer = ch;
+  int nwritten;
+  int errcode;
 
   DEBUGASSERT(this && rthis->fd >= 0);
 
@@ -73,13 +74,14 @@ static void rawoutstream_putc(FAR struct lib_outstream_s *this, int ch)
         }
 
       /* The only expected error is EINTR, meaning that the write operation
-       * was awakened by a signal.  Zero would not be a valid return value
-       * from write().
+       * was awakened by a signal.  Zero or values > 1 would not be valid
+       * return values from write().
        */
 
+      errcode = get_errno();
       DEBUGASSERT(nwritten < 0);
     }
-  while (get_errno() == EINTR);
+  while (errcode == EINTR);
 }
 
 /****************************************************************************

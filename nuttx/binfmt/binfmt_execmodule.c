@@ -1,7 +1,7 @@
 /****************************************************************************
  * binfmt/binfmt_execmodule.c
  *
- *   Copyright (C) 2009, 2013 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2009, 2013-2014 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,7 +50,7 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/binfmt/binfmt.h>
 
-#include "os_internal.h"
+#include "sched/sched.h"
 #include "binfmt_internal.h"
 
 #ifndef CONFIG_BINFMT_DISABLE
@@ -135,9 +135,7 @@ static void exec_ctors(FAR void *arg)
 int exec_module(FAR const struct binary_s *binp)
 {
   FAR struct task_tcb_s *tcb;
-#ifndef CONFIG_CUSTOM_STACK
   FAR uint32_t *stack;
-#endif
   pid_t pid;
   int err;
   int ret;
@@ -156,7 +154,7 @@ int exec_module(FAR const struct binary_s *binp)
 
   /* Allocate a TCB for the new task. */
 
-  tcb = (FAR struct task_tcb_s*)kzalloc(sizeof(struct task_tcb_s));
+  tcb = (FAR struct task_tcb_s*)kmm_zalloc(sizeof(struct task_tcb_s));
   if (!tcb)
     {
       err = ENOMEM;
@@ -165,8 +163,7 @@ int exec_module(FAR const struct binary_s *binp)
 
   /* Allocate the stack for the new task (always from the user heap) */
 
-#ifndef CONFIG_CUSTOM_STACK
-  stack = (FAR uint32_t*)kumalloc(binp->stacksize);
+  stack = (FAR uint32_t*)kumm_malloc(binp->stacksize);
   if (!tcb)
     {
       err = ENOMEM;
@@ -177,15 +174,9 @@ int exec_module(FAR const struct binary_s *binp)
 
   ret = task_init((FAR struct tcb_s *)tcb, binp->filename, binp->priority,
                   stack, binp->stacksize, binp->entrypt, binp->argv);
-#else
-  /* Initialize the task */
-
-  ret = task_init((FAR struct tcb_s *)tcb, binp->filename, binp->priority,
-                  stack, binp->entrypt, binp->argv);
-#endif
   if (ret < 0)
     {
-      err = errno;
+      err = get_errno();
       bdbg("task_init() failed: %d\n", err);
       goto errout_with_stack;
     }
@@ -193,11 +184,11 @@ int exec_module(FAR const struct binary_s *binp)
   /* Note that tcb->flags are not modified.  0=normal task */
   /* tcb->flags |= TCB_FLAG_TTYPE_TASK; */
 
+#ifdef CONFIG_PIC
   /* Add the D-Space address as the PIC base address.  By convention, this
    * must be the first allocated address space.
    */
 
-#ifdef CONFIG_PIC
   tcb->cmn.dspace = binp->alloc[0];
 
   /* Re-initialize the task's initial state to account for the new PIC base */
@@ -205,24 +196,28 @@ int exec_module(FAR const struct binary_s *binp)
   up_initial_state(&tcb->cmn);
 #endif
 
-  /* Assign the address environment to the task */
+#ifdef CONFIG_ARCH_ADDRENV
+  /* Assign the address environment to the new task group */
 
-#ifdef CONFIG_ADDRENV
-  ret = up_addrenv_assign(binp->addrenv, &tcb->cmn);
+  ret = up_addrenv_clone(&binp->addrenv, &tcb->cmn.group->addrenv);
   if (ret < 0)
     {
       err = -ret;
-      bdbg("up_addrenv_assign() failed: %d\n", ret);
+      bdbg("ERROR: up_addrenv_clone() failed: %d\n", ret);
       goto errout_with_stack;
     }
+
+  /* Mark that this group has an address environment */
+
+  tcb->cmn.group->tg_flags |= GROUP_FLAG_ADDRENV;
 #endif
 
+#ifdef CONFIG_BINFMT_CONSTRUCTORS
   /* Setup a start hook that will execute all of the C++ static constructors
    * on the newly created thread.  The struct binary_s must persist at least
    * until the new task has been started.
    */
 
-#ifdef CONFIG_BINFMT_CONSTRUCTORS
   task_starthook(tcb, exec_ctors, (FAR void *)binp);
 #endif
 
@@ -235,7 +230,7 @@ int exec_module(FAR const struct binary_s *binp)
   ret = task_activate((FAR struct tcb_s *)tcb);
   if (ret < 0)
     {
-      err = errno;
+      err = get_errno();
       bdbg("task_activate() failed: %d\n", err);
       goto errout_with_stack;
     }
@@ -243,22 +238,17 @@ int exec_module(FAR const struct binary_s *binp)
   return (int)pid;
 
 errout_with_stack:
-#ifndef CONFIG_CUSTOM_STACK
   tcb->cmn.stack_alloc_ptr = NULL;
   sched_releasetcb(&tcb->cmn, TCB_FLAG_TTYPE_TASK);
-  kufree(stack);
-#else
-  sched_releasetcb(&tcb->cmn, TCB_FLAG_TTYPE_TASK);
-#endif
+  kumm_free(stack);
   goto errout;
 
 errout_with_tcb:
-  kfree(tcb);
+  kmm_free(tcb);
 errout:
-  errno = err;
+  set_errno(err);
   bdbg("returning errno: %d\n", err);
   return ERROR;
 }
 
 #endif /* CONFIG_BINFMT_DISABLE */
-

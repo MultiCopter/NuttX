@@ -46,17 +46,19 @@
 #include <nuttx/arch.h>
 #include <nuttx/sched.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/clock.h>
+
 #include <semaphore.h>
 #include <queue.h>
 #include <stdlib.h>
 #include <arch/arch.h>
-#include <os_internal.h>
+#include <sched/sched.h>
 
 int nest_irq = 0;
 
 // the default time is 10ms
-#ifdef CONFIG_MSEC_PER_TICK
-const unsigned int rtos_tick_time = CONFIG_MSEC_PER_TICK;
+#ifdef MSEC_PER_TICK
+const unsigned int rtos_tick_time = MSEC_PER_TICK;
 #else
 const unsigned int rtos_tick_time = 10;
 #endif
@@ -78,12 +80,12 @@ void rtos_free_page(void *page)
 
 void *rtos_kmalloc(int size)
 {
-	return kmalloc(size);
+	return kmm_malloc(size);
 }
 
 void rtos_kfree(void *addr)
 {
-	kfree(addr);
+	kmm_free(addr);
 }
 
 /**
@@ -128,7 +130,7 @@ void rtos_timer_isr(void *data)
  */
 int rtos_sem_init(struct semaphore *sem, int val)
 {
-	if ((sem->sem = kmalloc(sizeof(sem_t))) == NULL)
+	if ((sem->sem = kmm_malloc(sizeof(sem_t))) == NULL)
 		return -1;
     return sem_init(sem->sem, 0, val);
 }

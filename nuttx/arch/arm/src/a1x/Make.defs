@@ -1,7 +1,7 @@
 ############################################################################
 # arch/arm/a1x/Make.defs
 #
-#   Copyright (C) 2013 Gregory Nutt. All rights reserved.
+#   Copyright (C) 2013-2014 Gregory Nutt. All rights reserved.
 #   Author: Gregory Nutt <gnutt@nuttx.org>
 #
 # Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,10 @@
 
 HEAD_ASRC  = arm_vectortab.S
 
+ifeq ($(CONFIG_BUILD_KERNEL),y)
+STARTUP_OBJS = crt0$(OBJEXT)
+endif
+
 # Force the start-up logic to be at the beginning of the .text to simplify
 # debug.
 
@@ -62,7 +66,7 @@ endif
 
 CMN_CSRCS  = up_initialize.c up_idle.c up_interruptcontext.c up_exit.c
 CMN_CSRCS += up_createstack.c up_releasestack.c up_usestack.c up_vfork.c
-CMN_CSRCS += up_puts.c up_mdelay.c up_udelay.c
+CMN_CSRCS += up_puts.c up_mdelay.c up_stackframe.c up_udelay.c
 CMN_CSRCS += up_modifyreg8.c up_modifyreg16.c up_modifyreg32.c
 
 CMN_CSRCS += arm_assert.c arm_blocktask.c arm_copyfullstate.c arm_dataabort.c
@@ -82,8 +86,16 @@ CMN_CSRCS += arm_allocpage.c arm_checkmapping.c arm_pginitialize.c
 CMN_CSRCS += arm_va2pte.c
 endif
 
+ifeq ($(CONFIG_BUILD_KERNEL),y)
+CMN_CSRCS += up_task_start.c up_pthread_start.c up_signal_dispatch.c
+endif
+
+ifeq ($(CONFIG_ARCH_ADDRENV),y)
+CMN_CSRCS += arm_addrenv.c arm_pgalloc.c
+endif
+
 ifeq ($(CONFIG_ELF),y)
-CMN_CSRCS += arm_elf.c
+CMN_CSRCS += arm_elf.c arm_coherent_dcache.c
 endif
 
 ifeq ($(CONFIG_ARCH_FPU),y)
@@ -101,4 +113,8 @@ CHIP_ASRCS  =
 
 # A1x-specific C source files
 
-CHIP_CSRCS  = a1x_boot.c a1x_irq.c a1x_pio.c a1x_timerisr.c a1x_lowputc.c a1x_serial.c
+CHIP_CSRCS  = a1x_boot.c a1x_irq.c a1x_pio.c a1x_lowputc.c a1x_serial.c
+
+ifneq ($(CONFIG_SCHED_TICKLESS),y)
+CHIP_CSRCS += a1x_timerisr.c
+endif

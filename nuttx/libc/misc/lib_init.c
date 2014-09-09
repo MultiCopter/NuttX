@@ -49,7 +49,8 @@
 
 #include "lib_internal.h"
 
-#if !defined(CONFIG_NUTTX_KERNEL) || defined(__KERNEL__)
+#if !defined(CONFIG_BUILD_PROTECTED) || defined(__KERNEL__) || \
+     defined(CONFIG_BUILD_KERNEL)
 
 /************************************************************
  * Pre-processor Definitions
@@ -114,8 +115,8 @@ void lib_streaminit(FAR struct streamlist *list)
     }
 }
 
-/* this function is called when a TCB is destroyed.  Note that is
- * does not close the file by release this inode.  This happens
+/* This function is called when a TCB is destroyed.  Note that is
+ * does not close the files by releasing the inode.  This happens
  * separately when the file descriptor list is freed.
  */
 
@@ -150,5 +151,5 @@ void lib_releaselist(FAR struct streamlist *list)
 #endif
 }
 
-#endif /* !CONFIG_NUTTX_KERNEL || __KERNEL__ */
+#endif /* !CONFIG_BUILD_PROTECTED || __KERNEL__ || CONFIG_BUILD_KERNEL */
 #endif /* CONFIG_NFILE_STREAMS */

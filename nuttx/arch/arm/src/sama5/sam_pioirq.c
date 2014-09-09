@@ -1,7 +1,7 @@
 /****************************************************************************
  * arch/arm/src/sama5/sam_pioirq.c
  *
- *   Copyright (C) 2013 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2013-2014 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,10 +53,11 @@
 #include "up_arch.h"
 #include "up_internal.h"
 
-#include "sam_pio.h"
-#include "sam_periphclks.h"
 #include "chip/sam_pio.h"
 #include "chip/sam_pmc.h"
+
+#include "sam_pio.h"
+#include "sam_periphclks.h"
 
 #ifdef CONFIG_SAMA5_PIO_IRQ
 
@@ -87,14 +88,14 @@
 static inline uint32_t sam_piobase(pio_pinset_t pinset)
 {
   int port = (pinset & PIO_PORT_MASK) >> PIO_PORT_SHIFT;
-  return SAM_PION_VBASE(port >> PIO_PORT_SHIFT);
+  return sam_pion_vbase(port >> PIO_PORT_SHIFT);
 }
 
 /****************************************************************************
  * Name: sam_piopin
  *
  * Description:
- *   Returun the base address of the PIO register set
+ *   Return the base address of the PIO register set
  *
  ****************************************************************************/
 
@@ -107,7 +108,7 @@ static inline int sam_piopin(pio_pinset_t pinset)
  * Name: sam_irqbase
  *
  * Description:
- *   Return pio information associated with this IRQ
+ *   Return PIO information associated with this IRQ
  *
  ****************************************************************************/
 
@@ -169,10 +170,10 @@ static int sam_irqbase(int irq, uint32_t *base, int *pin)
 }
 
 /****************************************************************************
- * Name: sam_pioa/b/cinterrupt
+ * Name: sam_pioa/b/c/d/e/finterrupt
  *
  * Description:
- *   Receive PIOA/B/C interrupts
+ *   Receive PIOA/B/C/D/E/F interrupts
  *
  ****************************************************************************/
 

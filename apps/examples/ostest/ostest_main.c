@@ -1,7 +1,7 @@
 /****************************************************************************
  * apps/examples/ostest/ostest_main.c
  *
- *   Copyright (C) 2007-2009, 2011-2012 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2007-2009, 2011-2012, 2014 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -223,7 +223,11 @@ static void show_environment(bool var1_valid, bool var2_valid, bool var3_valid)
  * Name: user_main
  ****************************************************************************/
 
+#ifdef CONFIG_BUILD_KERNEL
+int main(int argc, FAR char *argv[])
+#else
 static int user_main(int argc, char *argv[])
+#endif
 {
   int i;
 
@@ -322,7 +326,7 @@ static int user_main(int argc, char *argv[])
 #endif
 
 #ifdef  CONFIG_ARCH_FPU
-  /* Check that the FPU is properly supported during context switching */
+      /* Check that the FPU is properly supported during context switching */
 
       printf("\nuser_main: FPU test\n");
       fpu_test();
@@ -387,7 +391,7 @@ static int user_main(int argc, char *argv[])
 #endif
 #endif
 
-#if !defined(CONFIG_DISABLE_SIGNALS) && !defined(CONFIG_DISABLE_PTHREAD) && !defined(CONFIG_DISABLE_CLOCK)
+#if !defined(CONFIG_DISABLE_SIGNALS) && !defined(CONFIG_DISABLE_PTHREAD)
       /* Verify pthreads and condition variable timed waits */
 
       printf("\nuser_main: timed wait test\n");
@@ -403,7 +407,7 @@ static int user_main(int argc, char *argv[])
       check_test_memory_usage();
 #endif
 
-#if !defined(CONFIG_DISABLE_MQUEUE) && !defined(CONFIG_DISABLE_PTHREAD) && !defined(CONFIG_DISABLE_CLOCK)
+#if !defined(CONFIG_DISABLE_MQUEUE) && !defined(CONFIG_DISABLE_PTHREAD)
       /* Verify pthreads and message queues */
 
       printf("\nuser_main: timed message queue test\n");
@@ -506,10 +510,14 @@ static void stdio_test(void)
  * Public Functions
  ****************************************************************************/
 
+#ifdef CONFIG_BUILD_KERNEL
 /****************************************************************************
+int main(int argc, FAR char **argv)
  * ostest_main
+#else
  ****************************************************************************/
 
+#endif
 int ostest_main(int argc, FAR char *argv[])
 {
   int result;
@@ -552,13 +560,8 @@ int ostest_main(int argc, FAR char *argv[])
 
   /* Verify that we can spawn a new task */
 
-#ifndef CONFIG_CUSTOM_STACK
   result = task_create("ostest", PRIORITY, STACKSIZE, user_main,
                        (FAR char * const *)g_argv);
-#else
-  result = task_create("ostest", PRIORITY, user_main,
-                       (FAR char * const *)g_argv);
-#endif
   if (result == ERROR)
     {
       printf("ostest_main: ERROR Failed to start user_main\n");

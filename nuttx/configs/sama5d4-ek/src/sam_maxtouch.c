@@ -120,9 +120,7 @@ static void mxt_clear(FAR const struct mxt_lower_s *lower);
  * of the maXTouch and provides some board-specific hooks.
  *
  * Memory for this structure is provided by the caller.  It is not copied
- * by the driver and is presumed to persist while the driver is active. The
- * memory must be writable because, under certain circumstances, the driver
- * may modify certain values.
+ * by the driver and is presumed to persist while the driver is active.
  */
 
 static struct sama5d4ek_tscinfo_s g_mxtinfo =
@@ -269,7 +267,7 @@ int arch_tcinitialize(int minor)
 
        /* Configure maXTouch CHG interrupts */
 
-      sam_pioirq(IRQ_CHG_MXT);
+      sam_pioirq(PIO_CHG_MXT);
       (void)irq_attach(IRQ_CHG_MXT, mxt_interrupt);
 
       /* Initialize and register the I2C touchscreen device */

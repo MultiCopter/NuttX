@@ -1,7 +1,7 @@
 /********************************************************************************************
  * NxWidgets/nxwm/src/cnxconsole.cxx
  *
- *   Copyright (C) 2012 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2012. 2104 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -60,6 +60,11 @@
 /********************************************************************************************
  * Pre-Processor Definitions
  ********************************************************************************************/
+/* Configuration ****************************************************************************/
+
+#ifdef CONFIG_NSH_USBKBD
+#  warning You probably do not really want CONFIG_NSH_USBKBD, try CONFIG_NXWM_KEYBOARD_USBHOST
+#endif
 
 /********************************************************************************************
  * Private Types
@@ -245,7 +250,7 @@ bool CNxConsole::run(void)
   g_nxconvars.nxcon   = 0;
 
   sched_lock();
-  m_pid = TASK_CREATE("NxConsole", CONFIG_NXWM_NXCONSOLE_PRIO,
+  m_pid = task_create("NxConsole", CONFIG_NXWM_NXCONSOLE_PRIO,
                       CONFIG_NXWM_NXCONSOLE_STACKSIZE, nxconsole,
                       (FAR char * const *)0);
 
@@ -659,6 +664,7 @@ bool NxWM::nshlibInitialize(void)
       return false;
    }
 #endif
+
   return true;
 }
 

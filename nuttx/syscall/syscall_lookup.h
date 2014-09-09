@@ -1,7 +1,7 @@
 /****************************************************************************
  * syscall/syscall_lookup.h
  *
- *   Copyright (C) 2011, 2013 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2011, 2013-2014 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -65,7 +65,11 @@ SYSCALL_LOOKUP(sem_trywait,               1, STUB_sem_trywait)
 SYSCALL_LOOKUP(sem_unlink,                1, STUB_sem_unlink)
 SYSCALL_LOOKUP(sem_wait,                  1, STUB_sem_wait)
 SYSCALL_LOOKUP(set_errno,                 1, STUB_set_errno)
+#ifndef CONFIG_ARCH_ADDRENV
 SYSCALL_LOOKUP(task_create,               5, STUB_task_create)
+#elif defined(CONFIG_MM_PGALLOC) && defined(CONFIG_ARCH_USE_MMU)
+SYSCALL_LOOKUP(pgalloc,                   2, STUB_pgalloc)
+#endif
 SYSCALL_LOOKUP(task_delete,               1, STUB_task_delete)
 SYSCALL_LOOKUP(task_restart,              1, STUB_task_restart)
 SYSCALL_LOOKUP(up_assert,                 2, STUB_up_assert)
@@ -126,13 +130,11 @@ SYSCALL_LOOKUP(up_assert,                 2, STUB_up_assert)
  * NuttX configuration.
  */
 
-#ifndef CONFIG_DISABLE_CLOCK
   SYSCALL_LOOKUP(syscall_clock_systimer,  0, STUB_clock_systimer)
   SYSCALL_LOOKUP(clock_getres,            2, STUB_clock_getres)
   SYSCALL_LOOKUP(clock_gettime,           2, STUB_clock_gettime)
   SYSCALL_LOOKUP(clock_settime,           2, STUB_clock_settime)
   SYSCALL_LOOKUP(gettimeofday,            2, STUB_gettimeofday)
-#endif
 
 /* The following are defined only if POSIX timers are supported */
 

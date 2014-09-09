@@ -76,6 +76,26 @@ CSRCS += sam_at25.c
 endif
 endif
 
+ifeq ($(CONFIG_FS_AUTOMOUNTER),y)
+CSRCS += sam_automount.c
+endif
+
+ifeq ($(CONFIG_AUDIO_WM8904),y)
+ifeq ($(CONFIG_SAMA5_TWI0),y)
+ifeq ($(CONFIG_SAMA5_SSC0),y)
+CSRCS += sam_wm8904.c
+endif
+endif
+endif
+
+ifeq ($(CONFIG_SAMA5_TWI0),y)
+CSRCS += sam_pmic.c
+endif
+
+ifeq ($(CONFIG_AUDIO_NULL),y)
+CSRCS += sam_audio_null.c
+endif
+
 ifeq ($(CONFIG_SAMA5_HSMCI0),y)
 CSRCS += sam_hsmci.c
 else
@@ -101,7 +121,12 @@ CSRCS += sam_maxtouch.c
 endif
 
 ifeq ($(CONFIG_NSH_ARCHINIT),y)
-CSRCS += sam_nsh.c
+CSRCS += sam_nsh.c sam_bringup.c
+else
+ifeq ($(CONFIG_BOARD_INITIALIZE),y)
+CSRCS += sam_bringup.c
+endif
+
 endif
 
 ifeq ($(CONFIG_ADC),y)
@@ -110,10 +135,6 @@ endif
 
 ifeq ($(CONFIG_PWM),y)
 CSRCS += sam_pwm.c
-endif
-
-ifeq ($(CONFIG_CAN),y)
-CSRCS += sam_can.c
 endif
 
 ifeq ($(CONFIG_USBMSC),y)

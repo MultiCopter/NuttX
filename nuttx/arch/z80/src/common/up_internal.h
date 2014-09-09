@@ -63,7 +63,7 @@
 #include "chip/switch.h"
 
 /****************************************************************************
- * Definitions
+ * Pre-processor Definitions
  ****************************************************************************/
 
 /* Determine which (if any) console driver to use.  If a console is enabled
@@ -142,7 +142,7 @@ void up_sigdeliver(void);
 
 /* Defined in CPU-specific logic (only for Z180) */
 
-#if CONFIG_ADDRENV
+#if CONFIG_ARCH_ADDRENV
 int up_mmuinit(void);
 #endif
 
@@ -182,7 +182,7 @@ extern void up_puts(const char *str);
 
 /* Defined in up_timerisr.c */
 
-void up_timerinit(void);
+void up_timer_initialize(void);
 
 /* Defined in board/up_leds.c */
 

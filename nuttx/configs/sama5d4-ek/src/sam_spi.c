@@ -1,5 +1,5 @@
 /************************************************************************************
- * configs/sama5d4-ek/src/up_spi.c
+ * configs/sama5d4-ek/src/sam_spi.c
  *
  *   Copyright (C) 2014 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
@@ -89,7 +89,7 @@
  * Name: sam_spiinitialize
  *
  * Description:
- *   Called to configure SPI chip select PIO pins for the SAMA4D4-EK board.
+ *   Called to configure SPI chip select PIO pins for the SAMA5D4-EK board.
  *
  ************************************************************************************/
 

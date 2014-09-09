@@ -1,7 +1,7 @@
 /****************************************************************************
  * arch/arm/src/kinetis/kinetis_sdhc.c
  *
- *   Copyright (C) 2011-2012 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2011-2012, 2014 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,9 +45,9 @@
 #include <string.h>
 #include <assert.h>
 #include <debug.h>
-#include <wdog.h>
 #include <errno.h>
 
+#include <nuttx/wdog.h>
 #include <nuttx/clock.h>
 #include <nuttx/arch.h>
 #include <nuttx/sdio.h>
@@ -2409,7 +2409,7 @@ static sdio_eventset_t kinetis_eventwait(FAR struct sdio_dev_s *dev,
 
       /* Start the watchdog timer */
 
-      delay = (timeout + (MSEC_PER_TICK-1)) / MSEC_PER_TICK;
+      delay = MSEC2TICK(timeout);
       ret   = wd_start(priv->waitwdog, delay, (wdentry_t)kinetis_eventtimeout,
                        1, (uint32_t)priv);
       if (ret != OK)

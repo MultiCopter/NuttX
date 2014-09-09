@@ -183,7 +183,7 @@ void up_initialize(void)
 
 #if !defined(CONFIG_SUPPRESS_INTERRUPTS) && !defined(CONFIG_SUPPRESS_TIMER_INTS) && \
     !defined(CONFIG_SYSTEMTICK_EXTCLK)
-  up_timerinit();
+  up_timer_initialize();
 #endif
 
   /* Register devices */
@@ -246,5 +246,9 @@ void up_initialize(void)
   /* Initialize USB -- device and/or host */
 
   up_usbinitialize();
+
+  /* Initialize the L2 cache if present and selected */
+
+  up_l2ccinitialize();
   board_led_on(LED_IRQSENABLED);
 }

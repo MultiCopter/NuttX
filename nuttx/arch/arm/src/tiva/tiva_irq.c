@@ -49,7 +49,6 @@
 #include "nvic.h"
 #include "ram_vectors.h"
 #include "up_arch.h"
-#include "os_internal.h"
 #include "up_internal.h"
 
 #include "chip.h"
@@ -323,6 +322,11 @@ void up_irqinitialize(void)
 #ifdef CONFIG_ARCH_RAMVECTORS
   up_ramvec_initialize();
 #endif
+
+#ifdef CONFIG_ARCH_CHIP_CC3200
+  putreg32((uint32_t)CONFIG_RAM_START, NVIC_VECTAB);
+#endif
+
 
   /* Set all interrupts (and exceptions) to the default priority */
 

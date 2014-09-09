@@ -2,7 +2,7 @@
  * net/socket/net_sendfile.c
  *
  *   Copyright (C) 2013 UVC Ingenieure. All rights reserved.
- *   Copyright (C) 2007-2013 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2007-2014 Gregory Nutt. All rights reserved.
  *   Authors: Gregory Nutt <gnutt@nuttx.org>
  *            Max Holtzberg <mh@uvc.de>
  *
@@ -65,9 +65,9 @@
 
 #include "netdev/netdev.h"
 #include "devif/devif.h"
+#include "arp/arp.h"
 #include "tcp/tcp.h"
 #include "socket/socket.h"
-
 
 /****************************************************************************
  * Definitions
@@ -99,7 +99,7 @@ struct sendfile_s
   ssize_t            snd_sent;    /* The number of bytes sent */
   uint32_t           snd_isn;     /* Initial sequence number */
   uint32_t           snd_acked;   /* The number of bytes acked */
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
+#ifdef CONFIG_NET_SOCKOPTS
   uint32_t           snd_time;    /* Last send time for determining timeout */
 #endif
 };
@@ -125,7 +125,7 @@ struct sendfile_s
  *
  ****************************************************************************/
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
+#ifdef CONFIG_NET_SOCKOPTS
 static inline int sendfile_timeout(FAR struct sendfile_s *pstate)
 {
   FAR struct socket *psock = 0;
@@ -146,7 +146,7 @@ static inline int sendfile_timeout(FAR struct sendfile_s *pstate)
 
   return FALSE;
 }
-#endif /* CONFIG_NET_SOCKOPTS && !CONFIG_DISABLE_CLOCK */
+#endif /* CONFIG_NET_SOCKOPTS */
 
 static uint16_t ack_interrupt(FAR struct net_driver_s *dev, FAR void *pvconn,
                               FAR void *pvpriv, uint16_t flags)
@@ -157,9 +157,9 @@ static uint16_t ack_interrupt(FAR struct net_driver_s *dev, FAR void *pvconn,
 
   if ((flags & TCP_ACKDATA) != 0)
     {
+#ifdef CONFIG_NET_SOCKOPTS
       /* Update the timeout */
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
       pstate->snd_time = clock_systimer();
 #endif
 
@@ -322,10 +322,14 @@ static uint16_t sendfile_interrupt(FAR struct net_driver_s *dev, FAR void *pvcon
            *
            * NOTE 2: If we are actually harvesting IP addresses on incoming IP
            * packets, then this check should not be necessary; the MAC mapping
-           * should already be in the ARP table.
+           * should already be in the ARP table in many cases.
+           *
+           * NOTE 3: If CONFIG_NET_ARP_SEND then we can be assured that the IP
+           * address mapping is already in the ARP table.
            */
 
-#if defined(CONFIG_NET_ETHERNET) && !defined (CONFIG_NET_ARP_IPIN)
+#if defined(CONFIG_NET_ETHERNET) && !defined(CONFIG_NET_ARP_IPIN) && \
+    !defined(CONFIG_NET_ARP_SEND)
           if (pstate->snd_sent != 0 || arp_find(conn->ripaddr) != NULL)
 #endif
             {
@@ -343,11 +347,11 @@ static uint16_t sendfile_interrupt(FAR struct net_driver_s *dev, FAR void *pvcon
         }
     }
 
+#ifdef CONFIG_NET_SOCKOPTS
   /* All data has been send and we are just waiting for ACK or re-transmit
    * indications to complete the send.  Check for a timeout.
    */
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
   if (sendfile_timeout(pstate))
     {
       /* Yes.. report the timeout */
@@ -356,7 +360,7 @@ static uint16_t sendfile_interrupt(FAR struct net_driver_s *dev, FAR void *pvcon
       pstate->snd_sent = -ETIMEDOUT;
       goto end_wait;
     }
-#endif /* CONFIG_NET_SOCKOPTS && !CONFIG_DISABLE_CLOCK */
+#endif /* CONFIG_NET_SOCKOPTS */
 
   if (pstate->snd_sent >= pstate->snd_flen
       && pstate->snd_acked < pstate->snd_flen)
@@ -463,6 +467,7 @@ ssize_t net_sendfile(int outfd, struct file *infile, off_t *offset,
 
   if (!psock || psock->s_crefs <= 0)
     {
+      ndbg("ERROR: Invalid socket\n");
       err = EBADF;
       goto errout;
     }
@@ -471,9 +476,22 @@ ssize_t net_sendfile(int outfd, struct file *infile, off_t *offset,
 
   if (psock->s_type != SOCK_STREAM || !_SS_ISCONNECTED(psock->s_flags))
     {
+      ndbg("ERROR: Not connected\n");
       err = ENOTCONN;
       goto errout;
     }
+
+  /* Make sure that the IP address mapping is in the ARP table */
+
+#ifdef CONFIG_NET_ARP_SEND
+  ret = arp_send(conn->ripaddr);
+  if (ret < 0)
+    {
+      ndbg("ERROR: Not reachable\n");
+      err = ENETUNREACH;
+      goto errout;
+    }
+#endif
 
   /* Set the socket state to sending */
 
@@ -523,9 +541,9 @@ ssize_t net_sendfile(int outfd, struct file *infile, off_t *offset,
 
   conn->unacked          = 0;
 
+#ifdef CONFIG_NET_SOCKOPTS
   /* Set the initial time for calculating timeouts */
 
-#if defined(CONFIG_NET_SOCKOPTS) && !defined(CONFIG_DISABLE_CLOCK)
   state.snd_time         = clock_systimer();
 #endif
 

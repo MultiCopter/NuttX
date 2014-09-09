@@ -57,7 +57,7 @@
  * the Main clock source in the on-board 12MHz crystal.
  */
 
-#define BOARD_MAINOSC_FREQUENCY    (12000000)  /* MAINOSC: 12MHz crystal on-board */
+#define BOARD_MAINCK_FREQUENCY     BOARD_MAINOSC_FREQUENCY
 #define BOARD_PLLA_FREQUENCY       (sam_pllack_frequency(BOARD_MAINOSC_FREQUENCY))
 #define BOARD_PLLADIV2_FREQUENCY   (sam_plladiv2_frequency(BOARD_MAINOSC_FREQUENCY))
 #define BOARD_PCK_FREQUENCY        (sam_pck_frequency(BOARD_MAINOSC_FREQUENCY))
@@ -68,6 +68,7 @@
  * REVISIT:  I am not sure why this is.  Perhaps because of H32MXDIV?
  */
 
+#define BOARD_PIT_FREQUENCY        (BOARD_MCK_FREQUENCY >> 1)
 #define BOARD_USART_FREQUENCY      (BOARD_MCK_FREQUENCY >> 1)
 
 #if defined(CONFIG_SAMA5_EHCI) || defined(CONFIG_SAMA5_OHCI) || \

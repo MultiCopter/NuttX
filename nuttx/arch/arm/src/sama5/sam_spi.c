@@ -1,7 +1,7 @@
 /****************************************************************************
  * arch/arm/src/sama5/sam_spi.c
  *
- *   Copyright (C) 2013 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2013-2014 Gregory Nutt. All rights reserved.
  *   Authors: Gregory Nutt <gnutt@nuttx.org>
  *
  * This derives from SAM3/4 SPI driver:
@@ -50,13 +50,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <semaphore.h>
-#include <wdog.h>
 #include <errno.h>
 #include <assert.h>
 #include <debug.h>
 
 #include <arch/board/board.h>
+
 #include <nuttx/arch.h>
+#include <nuttx/wdog.h>
 #include <nuttx/clock.h>
 #include <nuttx/spi/spi.h>
 
@@ -120,7 +121,7 @@
  */
 
 #define DMA_TIMEOUT_MS    (800)
-#define DMA_TIMEOUT_TICKS ((DMA_TIMEOUT_MS + (MSEC_PER_TICK-1)) / MSEC_PER_TICK)
+#define DMA_TIMEOUT_TICKS MSEC2TICK(DMA_TIMEOUT_MS)
 
 /* Debug *******************************************************************/
 /* Check if SPI debut is enabled (non-standard.. no support in

@@ -38,6 +38,10 @@
 
 HEAD_ASRC  = arm_vectortab.S
 
+ifeq ($(CONFIG_BUILD_KERNEL),y)
+STARTUP_OBJS = crt0$(OBJEXT)
+endif
+
 # Force the start-up logic to be at the beginning of the .text to simplify
 # debug.
 
@@ -54,6 +58,8 @@ CMN_ASRCS += arm_saveusercontext.S arm_vectoraddrexcptn.S arm_vfork.S
 CMN_ASRCS += cp15_coherent_dcache.S cp15_invalidate_dcache.S
 CMN_ASRCS += cp15_clean_dcache.S cp15_flush_dcache.S cp15_invalidate_dcache_all.S
 
+# Configuration dependent assembly language files
+
 ifeq ($(CONFIG_ARCH_MEMCPY),y)
 CMN_ASRCS += arm_memcpy.S
 endif
@@ -62,7 +68,7 @@ endif
 
 CMN_CSRCS  = up_initialize.c up_idle.c up_interruptcontext.c up_exit.c
 CMN_CSRCS += up_createstack.c up_releasestack.c up_usestack.c up_vfork.c
-CMN_CSRCS += up_puts.c up_mdelay.c up_udelay.c
+CMN_CSRCS += up_puts.c up_mdelay.c up_stackframe.c up_udelay.c
 CMN_CSRCS += up_modifyreg8.c up_modifyreg16.c up_modifyreg32.c
 
 CMN_CSRCS += arm_assert.c arm_blocktask.c arm_copyfullstate.c arm_dataabort.c
@@ -71,15 +77,27 @@ CMN_CSRCS += arm_releasepending.c arm_reprioritizertr.c
 CMN_CSRCS += arm_schedulesigaction.c arm_sigdeliver.c arm_syscall.c
 CMN_CSRCS += arm_unblocktask.c arm_undefinedinsn.c
 
-# Configuration dependent C and assembly language files
+# Configuration dependent C files
+
+ifeq ($(CONFIG_ARMV7A_L2CC_PL310),y)
+CMN_CSRCS += arm_l2cc_pl310.c
+endif
 
 ifeq ($(CONFIG_PAGING),y)
 CMN_CSRCS += arm_allocpage.c arm_checkmapping.c arm_pginitialize.c
 CMN_CSRCS += arm_va2pte.c
 endif
 
+ifeq ($(CONFIG_BUILD_KERNEL),y)
+CMN_CSRCS += up_task_start.c up_pthread_start.c up_signal_dispatch.c
+endif
+
+ifeq ($(CONFIG_ARCH_ADDRENV),y)
+CMN_CSRCS += arm_addrenv.c arm_pgalloc.c
+endif
+
 ifeq ($(CONFIG_ELF),y)
-CMN_CSRCS += arm_elf.c
+CMN_CSRCS += arm_elf.c arm_coherent_dcache.c
 endif
 
 ifeq ($(CONFIG_ARCH_FPU),y)
@@ -99,9 +117,17 @@ CHIP_ASRCS  =
 
 CHIP_CSRCS  = sam_allocateheap.c sam_boot.c sam_clockconfig.c sam_irq.c
 CHIP_CSRCS += sam_lowputc.c sam_memories.c sam_pck.c sam_pio.c sam_pmc.c
-CHIP_CSRCS += sam_serial.c sam_timerisr.c
+CHIP_CSRCS += sam_sckc.c sam_serial.c
 
 # Configuration dependent C and assembly language files
+
+ifeq ($(CONFIG_MM_PGALLOC),y)
+CHIP_CSRCS += sam_pgalloc.c
+endif
+
+ifneq ($(CONFIG_SCHED_TICKLESS),y)
+CHIP_CSRCS += sam_timerisr.c
+endif
 
 ifeq ($(CONFIG_SAMA5_DMAC0),y)
 CHIP_CSRCS += sam_dmac.c
@@ -240,11 +266,16 @@ ifeq ($(CONFIG_SAMA5_PWM),y)
 CHIP_CSRCS += sam_pwm.c
 endif
 
-ifeq ($(CONFIG_SAMA5_TC0),y)
+ifeq ($(CONFIG_SAMA5_HAVE_TC),y)
 CHIP_CSRCS += sam_tc.c
-else
-ifeq ($(CONFIG_SAMA5_TC1),y)
-CHIP_CSRCS += sam_tc.c
+ifeq ($(CONFIG_SAMA5_ONESHOT),y)
+CHIP_CSRCS += sam_oneshot.c
+endif
+ifeq ($(CONFIG_SAMA5_FREERUN),y)
+CHIP_CSRCS += sam_freerun.c
+endif
+ifeq ($(CONFIG_SCHED_TICKLESS),y)
+CHIP_CSRCS += sam_tickless.c
 endif
 endif
 

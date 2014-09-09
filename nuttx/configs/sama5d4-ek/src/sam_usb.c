@@ -197,7 +197,7 @@ static int ehci_waiter(int argc, char *argv[])
  *
  * Description:
  *   Called from sam_usbinitialize very early in inialization to setup USB-related
- *   GPIO pins for the SAMA4D4-EK board.
+ *   GPIO pins for the SAMA5D4-EK board.
  *
  * USB Ports
  *   The SAMA5D4 series-MB features three USB communication ports:
@@ -343,7 +343,7 @@ int sam_usbhost_initialize(void)
 
   /* Start a thread to handle device connection. */
 
-  pid = TASK_CREATE("OHCI Monitor", CONFIG_USBHOST_DEFPRIO,  CONFIG_USBHOST_STACKSIZE,
+  pid = task_create("OHCI Monitor", CONFIG_USBHOST_DEFPRIO,  CONFIG_USBHOST_STACKSIZE,
                     (main_t)ohci_waiter, (FAR char * const *)NULL);
   if (pid < 0)
     {
@@ -364,7 +364,7 @@ int sam_usbhost_initialize(void)
 
   /* Start a thread to handle device connection. */
 
-  pid = TASK_CREATE("EHCI Monitor", CONFIG_USBHOST_DEFPRIO,  CONFIG_USBHOST_STACKSIZE,
+  pid = task_create("EHCI Monitor", CONFIG_USBHOST_DEFPRIO,  CONFIG_USBHOST_STACKSIZE,
                     (main_t)ehci_waiter, (FAR char * const *)NULL);
   if (pid < 0)
     {
@@ -464,7 +464,7 @@ void sam_usbhost_vbusdrive(int rhport, bool enable)
  *   REVISIT: Since this is a common signal, we will need to come up with some way
  *   to inform both EHCI and OHCI drivers when this error occurs.
  *
- * Input paramter:
+ * Input Parameters:
  *   handler - New over-current interrupt handler
  *
  * Returned value:
@@ -494,7 +494,7 @@ xcpt_t sam_setup_overcurrent(xcpt_t handler)
 
   /* Configure the interrupt */
 
-  sam_pioirq(IRQ_USBBC_VBUS_OVERCURRENT);
+  sam_pioirq(PIO_USBBC_VBUS_OVERCURRENT);
   (void)irq_attach(IRQ_USBBC_VBUS_OVERCURRENT, handler);
   sam_pioirqenable(IRQ_USBBC_VBUS_OVERCURRENT);
 

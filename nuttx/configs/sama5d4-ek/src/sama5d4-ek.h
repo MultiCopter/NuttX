@@ -55,15 +55,21 @@
  ************************************************************************************/
 /* Configuration ************************************************************/
 
-#define HAVE_HSMCI      1
-#define HAVE_AT25       1
-#define HAVE_NAND       1
-#define HAVE_USBHOST    1
-#define HAVE_USBDEV     1
-#define HAVE_USBOVCUR   1
-#define HAVE_USBMONITOR 1
-#define HAVE_NETWORK    1
-#define HAVE_MAXTOUCH   1
+#define HAVE_HSMCI       1
+#define HAVE_AT25        1
+#define HAVE_NAND        1
+#define HAVE_AUTOMOUNTER 1
+#define HAVE_USBHOST     1
+#define HAVE_USBDEV      1
+#define HAVE_USBOVCUR    1
+#define HAVE_USBMONITOR  1
+#define HAVE_NETWORK     1
+#define HAVE_MAXTOUCH    1
+#define HAVE_WM8904      1
+#define HAVE_AUDIO_NULL  1
+#define HAVE_PMIC        1
+#define HAVE_ELF         1
+#define HAVE_ROMFS       1
 
 /* HSMCI */
 /* Can't support MMC/SD if the card interface(s) are not enable */
@@ -97,7 +103,7 @@
  * asked to mount the NAND part
  */
 
-#if defined(CONFIG_DISABLE_MOUNTPOINT) || !defined(CONFIG_SAMA5D4EK_NAND_AUTOMOUNT)
+#if defined(CONFIG_DISABLE_MOUNTPOINT) || !defined(CONFIG_SAMA5D4EK_NAND_BLOCKMOUNT)
 #  undef HAVE_NAND
 #endif
 
@@ -142,7 +148,7 @@
  * asked to mount the AT25 part
  */
 
-#if defined(CONFIG_DISABLE_MOUNTPOINT) || !defined(CONFIG_SAMA5D4EK_AT25_AUTOMOUNT)
+#if defined(CONFIG_DISABLE_MOUNTPOINT) || !defined(CONFIG_SAMA5D4EK_AT25_BLOCKMOUNT)
 #  undef HAVE_AT25
 #endif
 
@@ -215,6 +221,75 @@
 #     define HSMCI1_MINOR  CONFIG_NSH_MMCSDMINOR
 #  endif
 #else
+#endif
+
+/* Automounter.  Currently only works with HSMCI. */
+
+#if !defined(CONFIG_FS_AUTOMOUNTER) || !defined(HAVE_HSMCI)
+#  undef HAVE_AUTOMOUNTER
+#endif
+
+#ifndef CONFIG_SAMA5_HSMCI0
+#  undef CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT
+#endif
+
+#ifndef CONFIG_SAMA5_HSMCI1
+#  undef CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT
+#endif
+
+#if !defined(CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT) && \
+    !defined(CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT)
+#  undef HAVE_AUTOMOUNTER
+#endif
+
+#ifdef HAVE_AUTOMOUNTER
+#  ifdef CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT
+  /* HSMCI0 Automounter defaults */
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_FSTYPE
+#      define CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_FSTYPE "vfat"
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_BLKDEV
+#      define CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_BLKDEV "/dev/mmcds0"
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_MOUNTPOINT
+#      define CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_MOUNTPOINT "/mnt/sdcard0"
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_DDELAY
+#      define CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_DDELAY 1000
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_UDELAY
+#      define CONFIG_SAMA5D4EK_HSMCI0_AUTOMOUNT_UDELAY 2000
+#    endif
+#  endif
+
+#  ifdef CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT
+  /* HSMCI1 Automounter defaults */
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_FSTYPE
+#      define CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_FSTYPE "vfat"
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_BLKDEV
+#      define CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_BLKDEV "/dev/mmcds0"
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_MOUNTPOINT
+#      define CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_MOUNTPOINT "/mnt/sdcard0"
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_DDELAY
+#      define CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_DDELAY 1000
+#    endif
+
+#    ifndef CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_UDELAY
+#      define CONFIG_SAMA5D4EK_HSMCI1_AUTOMOUNT_UDELAY 2000
+#    endif
+#  endif
 #endif
 
 /* USB Host / USB Device */
@@ -315,6 +390,85 @@
 #  endif
 #endif
 
+/* Audio */
+/* PCM/WM8904 driver */
+
+#ifndef CONFIG_AUDIO_WM8904
+#  undef HAVE_WM8904
+#endif
+
+#ifdef HAVE_WM8904
+#  ifndef CONFIG_SAMA5_TWI0
+#    warning CONFIG_SAMA5_TWI0 is required for audio support
+#    undef HAVE_WM8904
+#  endif
+
+#  ifndef CONFIG_SAMA5_SSC0
+#    warning CONFIG_SAMA5_SSC0 is required for audio support
+#    undef HAVE_WM8904
+#  endif
+
+#  if !defined(CONFIG_SAMA5_PIOE_IRQ)
+#    warning CONFIG_SAMA5_PIOE_IRQ is required for audio support
+#    undef HAVE_HSMCI
+#  endif
+
+#  ifndef CONFIG_AUDIO_FORMAT_PCM
+#    warning CONFIG_AUDIO_FORMAT_PCM is required for audio support
+#    undef HAVE_WM8904
+#  endif
+
+#  ifndef CONFIG_SAMA5D4EK_WM8904_I2CFREQUENCY
+#    warning Defaulting to maximum WM8904 I2C frequency
+#    define CONFIG_SAMA5D4EK_WM8904_I2CFREQUENCY 400000
+#  endif
+
+#  if CONFIG_SAMA5D4EK_WM8904_I2CFREQUENCY > 400000
+#    warning WM8904 I2C frequency cannot exceed 400KHz
+#    undef CONFIG_SAMA5D4EK_WM8904_I2CFREQUENCY
+#    define CONFIG_SAMA5D4EK_WM8904_I2CFREQUENCY 400000
+#  endif
+#endif
+
+/* PCM/null driver */
+
+#ifndef CONFIG_AUDIO_NULL
+#  undef HAVE_AUDIO_NULL
+#endif
+
+#ifdef HAVE_WM8904
+#  undef HAVE_AUDIO_NULL
+#endif
+
+#ifdef HAVE_AUDIO_NULL
+#  ifndef CONFIG_AUDIO_FORMAT_PCM
+#    warning CONFIG_AUDIO_FORMAT_PCM is required for audio support
+#    undef HAVE_AUDIO_NULL
+#  endif
+#endif
+
+/* PMIC */
+
+#if !defined(CONFIG_SAMA5_TWI0) || !defined(CONFIG_SAMA5D4_MB_REVC)
+#  undef HAVE_PMIC
+#endif
+
+#ifndef CONFIG_EXPERIMENTAL
+#  undef HAVE_PMIC /* REVISIT: Disable anyway because it does not yet work */
+#endif
+
+/* ELF */
+
+#if defined(CONFIG_BINFMT_DISABLE) || !defined(CONFIG_ELF)
+#  undef HAVE_ELF
+#endif
+
+/* ROMFS */
+
+#ifndef CONFIG_FS_ROMFS
+#  undef HAVE_ROMFS
+#endif
+
 /* LEDs *****************************************************************************/
 /* There are 3 LEDs on the SAMA5D4-EK:
  *
@@ -387,15 +541,20 @@
  */
 
 #define PIO_CHG_MXT  (PIO_INPUT | PIO_CFG_PULLUP | PIO_CFG_DEGLITCH | \
-                      PIO_INT_BOTHEDGES | PIO_PORT_PIOE | PIO_PIN24)
+                      PIO_INT_FALLING | PIO_PORT_PIOE | PIO_PIN24)
 #define IRQ_CHG_MXT   SAM_IRQ_PE24
 
 #define PIO_CHG_QT   (PIO_INPUT | PIO_CFG_PULLUP | PIO_CFG_DEGLITCH | \
-                      PIO_INT_BOTHEDGES | PIO_PORT_PIOE | PIO_PIN25)
+                      PIO_INT_FALLING | PIO_PORT_PIOE | PIO_PIN25)
 #define IRQ_CHG_QT    SAM_IRQ_PE25
 
+/* The touchscreen communicates on TWI0, I2C address 0x4c */
+
+#define MXT_TWI_BUS      0
+#define MXT_I2C_ADDRESS  0x4c
+
 /* HSMCI Card Slots *****************************************************************/
-/* The SAMA4D4-EK provides a two SD memory card slots:  (1) a full size SD
+/* The SAMA5D4-EK provides a two SD memory card slots:  (1) a full size SD
  * card slot (J10), and (2) a microSD memory card slot (J11).
  *
  * The full size SD card slot connects via HSMCI0.  The card detect discrete
@@ -452,7 +611,7 @@
                       PIO_PORT_PIOE | PIO_PIN15)
 
 /* USB Ports ************************************************************************/
-/* The SAMA4D4-EK features three USB communication ports:
+/* The SAMA5D4-EK features three USB communication ports:
  *
  *   * Port A Host High Speed (EHCI) and Full Speed (OHCI) multiplexed with
  *     USB Device High Speed Micro AB connector, J1
@@ -540,7 +699,7 @@
 
 /* Ethernet */
 
-#ifdef CONFIG_SAMA4_EMACB
+#ifdef CONFIG_SAMA5_EMACB
 /* ETH0/1: Ethernet 10/100 (EMAC) Ports
  *
  * Networking support via the can be added to NSH by selecting the following
@@ -599,21 +758,65 @@
  * enabled via LCD_ETH1_CONFIG when an LCD is detected:
  *
  * - LCD_ETH1_CONFIG = 0: LCD 5v disable
- * - LCD_ETH1_CONFIG = 1 & LCD_DETECT# =0: LCD 5v enable
+ * - LCD_ETH1_CONFIG = 1 & LCD_DETECT# =0: LCD 5v enable.
+ *
+ * The sense of KSZ8081 interrupt is configurable but is, by default, active
+ * low.
  */
 
-#ifdef CONFIG_SAMA4_EMAC0
+#ifdef CONFIG_SAMA5_EMAC0
 #  define PIO_INT_ETH0 (PIO_INPUT | PIO_CFG_PULLUP | PIO_CFG_DEGLITCH | \
-                        PIO_INT_BOTHEDGES | PIO_PORT_PIOE | PIO_PIN1)
+                        PIO_INT_FALLING | PIO_PORT_PIOE | PIO_PIN1)
 #  define IRQ_INT_ETH0 SAM_IRQ_PE1
 #endif
 
-#ifdef CONFIG_SAMA4_EMAC1
+#ifdef CONFIG_SAMA5_EMAC1
 #  define PIO_INT_ETH1 (PIO_INPUT | PIO_CFG_PULLUP | PIO_CFG_DEGLITCH | \
-                        PIO_INT_BOTHEDGES | PIO_PORT_PIOE | PIO_PIN2)
+                        PIO_INT_FALLING | PIO_PORT_PIOE | PIO_PIN2)
 #  define IRQ_INT_ETH1 SAM_IRQ_PE2
 #endif
 #endif
+
+/* WM8904 Audio Codec ***************************************************************/
+/* SAMA5D4 Interface
+ * ---- ------------------ ---------------- ---------- ------------------------------
+ * PIO  USAGE              BOARD SIGNAL     WM8904 PIN NOTE
+ * ---- ------------------ ---------------- ---------- ------------------------------
+ * PA30 TWD0               AUDIO_TWD0_PA30  SDA        Pulled up, See J23 note below
+ * PA31 TWCK0              AUDIO_TWCK0_PA31 SCLK       Pulled up
+ * PB10 AUDIO_PCK2/EXP     AUDIO_PCK2_PB10  MCLK
+ * PB27 AUDIO/HDMI_TK0/EXP AUDIO_TK0_PB27   BCLK/GPIO4 TK0/RK0 are mutually exclusive
+ * PB26 AUDIO_RK0          AUDIO_RK0_PB26   "  "/"   " " "/" " " " "      " "       "
+ * PB30 AUDIO_RF/ZIG_TWCK2 AUDIO_RF0_PB30   LRCLK      TF0/RF0 are mutually exclusive
+ * PB31 AUDIO/HDMI_TF0/EXP AUDIO_TF0_PB31   "   "      " "/" " " " "      " "       "
+ * PB29 AUDIO_RD0/ZIG_TWD2 AUDIO_RD0_PB29   ADCDAT
+ * PB28 AUDIO/HDMI_TD0/EXP AUDIO_TD0_PB28   ACDAT
+ * PE4  AUDIO_IRQ          AUDIO_IRQ_PE4    IRQ/GPIO1  Audio interrupt
+ * ---- ------------------ ---------------- ---------- ------------------------------
+ * Note that jumper J23 must be closed to connect AUDIO_TWD0_PA30
+ */
+
+/* Pin Disambiguation */
+
+#define PIO_SSC0_TD    PIO_SSC0_TD_2
+
+/* Audio Interrupt. All interrupts are default, active high level.  Pull down
+ * internally in the WM8904.  So we want no pull-up/downs and we want to
+ * interrupt on the high level.
+ */
+
+#define PIO_INT_WM8904 (PIO_INPUT | PIO_CFG_DEFAULT | PIO_CFG_DEGLITCH | \
+                        PIO_INT_HIGHLEVEL | PIO_PORT_PIOE | PIO_PIN4)
+#define IRQ_INT_WM8904 SAM_IRQ_PE4
+
+/* The MW8904 communicates on TWI0, I2C address 0x1a for control operations */
+
+#define WM8904_TWI_BUS      0
+#define WM8904_I2C_ADDRESS  0x1a
+
+/* The MW8904 transfers data on SSC0 */
+
+#define WM8904_SSC_BUS      0
 
 /* SPI Chip Selects *****************************************************************/
 /* The SAMA5D4-EK includes an Atmel AT25DF321A, 32-megabit, 2.7-volt SPI serial
@@ -633,6 +836,13 @@
                         PIO_PORT_PIOC | PIO_PIN3)
 #define AT25_PORT      SPI0_CS0
 
+/* ACT8865 power management chip ****************************************************/
+/* The PMIC communicates on TWI0, I2C address 0x5b */
+
+#define PMIC_TWI_BUS       0
+#define PMIC_I2C_ADDRESS   0x5b
+#define PMIC_I2C_FREQUENCY 400000 /* 400KHz max */
+
 /************************************************************************************
  * Public Types
  ************************************************************************************/
@@ -651,7 +861,7 @@
  * Name: sam_spiinitialize
  *
  * Description:
- *   Called to configure SPI chip select PIO pins for the SAMA4D4-EK board.
+ *   Called to configure SPI chip select PIO pins for the SAMA5D4-EK board.
  *
  ************************************************************************************/
 
@@ -665,7 +875,7 @@ void weak_function sam_spiinitialize(void);
  * Description:
  *   Configures DDR2 (MT47H128M16RT 128MB or, optionally,  MT47H64M16HR)
  *
- *   Per the SAMA4D4-EK User guide: "Two SDRAM/DDR2 used as main system memory.
+ *   Per the SAMA5D4-EK User guide: "Two SDRAM/DDR2 used as main system memory.
  *   MT47H128M16 - 2 Gb - 16 Meg x 16 x 8 banks, the board provides up to 2 Gb on-
  *   board, soldered DDR2 SDRAM. The memory bus is 32 bits wide and operates with
  *   up to 166 MHz."
@@ -677,7 +887,7 @@ void weak_function sam_spiinitialize(void);
  *     Column address A[9:0] (1K)
  *     Bank address BA[2:0] a(24,25) (8)
  *
- *  This logic was taken from Atmel sample code for the SAMA4D4-EK.
+ *  This logic was taken from Atmel sample code for the SAMA5D4-EK.
  *
  *  Input Parameters:
  *     devtype - Either DDRAM_MT47H128M16RT or DDRAM_MT47H64M16HR
@@ -694,6 +904,16 @@ void sam_sdram_config(void);
 #else
 #  define board_sdram_config(t)
 #endif
+
+/****************************************************************************
+ * Name: sam_bringup
+ *
+ * Description:
+ *   Bring up board features
+ *
+ ****************************************************************************/
+
+int sam_bringup(void);
 
 /****************************************************************************
  * Name: sam_nand_automount
@@ -744,6 +964,52 @@ bool sam_cardinserted(int slotno);
 #endif
 
 /************************************************************************************
+ * Name:  sam_automount_initialize
+ *
+ * Description:
+ *   Configure auto-mounters for each enable and so configured HSMCI
+ *
+ * Input Parameters:
+ *   None
+ *
+ *  Returned Value:
+ *    None
+ *
+ ************************************************************************************/
+
+#ifdef HAVE_AUTOMOUNTER
+void sam_automount_initialize(void);
+#endif
+
+/************************************************************************************
+ * Name:  sam_automount_event
+ *
+ * Description:
+ *   The HSMCI card detection logic has detected an insertion or removal event.  It
+ *   has already scheduled the MMC/SD block driver operations.  Now we need to
+ *   schedule the auto-mount event which will occur with a substantial delay to make
+ *   sure that everything has settle down.
+ *
+ * Input Parameters:
+ *   slotno - Identifies the HSMCI0 slot: HSMCI0 or HSMCI1_SLOTNO.  There is a
+ *      terminology problem here:  Each HSMCI supports two slots, slot A and slot B.
+ *      Only slot A is used.  So this is not a really a slot, but an HSCMI peripheral
+ *      number.
+ *   inserted - True if the card is inserted in the slot.  False otherwise.
+ *
+ *  Returned Value:
+ *    None
+ *
+ *  Assumptions:
+ *    Interrupts are disabled.
+ *
+ ************************************************************************************/
+
+#ifdef HAVE_AUTOMOUNTER
+void sam_automount_event(int slotno, bool inserted);
+#endif
+
+/************************************************************************************
  * Name: sam_writeprotected
  *
  * Description:
@@ -760,7 +1026,7 @@ bool sam_writeprotected(int slotno);
  *
  * Description:
  *   Called from sam_usbinitialize very early in inialization to setup USB-related
- *   PIO pins for the SAMA4D4-EK board.
+ *   PIO pins for the SAMA5D4-EK board.
  *
  ************************************************************************************/
 
@@ -817,6 +1083,66 @@ void board_led_initialize(void);
 
 #ifdef CONFIG_NSH_LIBRARY
 int nsh_archinitialize(void);
+#endif
+
+/****************************************************************************
+ * Name: sam_wm8904_initialize
+ *
+ * Description:
+ *   This function is called by platform-specific, setup logic to configure
+ *   and register the WM8904 device.  This function will register the driver
+ *   as /dev/wm8904[x] where x is determined by the minor device number.
+ *
+ * Input Parameters:
+ *   minor - The input device minor number
+ *
+ * Returned Value:
+ *   Zero is returned on success.  Otherwise, a negated errno value is
+ *   returned to indicate the nature of the failure.
+ *
+ ****************************************************************************/
+
+#ifdef HAVE_WM8904
+int sam_wm8904_initialize(int minor);
+#endif /* HAVE_WM8904 */
+
+/****************************************************************************
+ * Name: sam_audio_null_initialize
+ *
+ * Description:
+ *   Set up to use the NULL audio device for PCM unit-level testing.
+ *
+ * Input Parameters:
+ *   minor - The input device minor number
+ *
+ * Returned Value:
+ *   Zero is returned on success.  Otherwise, a negated errno value is
+ *   returned to indicate the nature of the failure.
+ *
+ ****************************************************************************/
+
+#ifdef HAVE_AUDIO_NULL
+int sam_audio_null_initialize(int minor);
+#endif /* HAVE_AUDIO_NULL */
+
+/****************************************************************************
+ * Name: sam_pmic_initialize
+ *
+ * Description:
+ *   Currently, this function only disables the PMIC.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+#ifdef HAVE_PMIC
+void sam_pmic_initialize(void);
+#else
+#  define sam_pmic_initialize()
 #endif
 
 #endif /* __ASSEMBLY__ */

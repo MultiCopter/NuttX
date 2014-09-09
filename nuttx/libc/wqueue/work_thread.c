@@ -67,7 +67,7 @@
 
 /* The state of each work queue. */
 
-#ifdef CONFIG_NUTTX_KERNEL
+#ifdef CONFIG_BUILD_PROTECTED
 
   /* Play some games in the kernel mode build to assure that different
    * naming is used for the global work queue data structures.  This may
@@ -83,11 +83,11 @@ struct wqueue_s g_kernelwork[NWORKERS];
 struct wqueue_s g_usrwork[NWORKERS];
 #  endif
 
-#else /* CONFIG_NUTTX_KERNEL */
+#else /* CONFIG_BUILD_PROTECTED */
 
 struct wqueue_s g_work[NWORKERS];
 
-#endif /* CONFIG_NUTTX_KERNEL */
+#endif /* CONFIG_BUILD_PROTECTED */
 
 /****************************************************************************
  * Private Variables
@@ -233,7 +233,7 @@ static void work_process(FAR struct wqueue_s *wqueue)
  *     These worker threads are started by the OS during normal bringup.
  *
  *   work_usrthread:  This is a user mode work queue.  It must be built into
- *     the applicatino blob during the user phase of a kernel build.  The
+ *     the application blob during the user phase of a kernel build.  The
  *     user work thread will then automatically be started when the system
  *     boots by calling through the pointer found in the header on the user
  *     space blob.

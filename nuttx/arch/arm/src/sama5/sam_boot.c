@@ -41,6 +41,7 @@
 
 #include <stdint.h>
 #include <assert.h>
+#include <debug.h>
 
 #ifdef CONFIG_PAGING
 #  include <nuttx/page.h>
@@ -567,7 +568,7 @@ static void sam_copyvectorblock(void)
 #else
   /* Flush the DCache to assure that the vector data is in physical in ISRAM */
 
-  cp15_clean_dcache((uintptr_t)SAM_VECTOR_VSRAM,
+  arch_clean_dcache((uintptr_t)SAM_VECTOR_VSRAM,
                     (uintptr_t)SAM_VECTOR_VSRAM + sam_vectorsize());
 #endif
 }
@@ -718,7 +719,7 @@ void up_boot(void)
    * be available when fetched into the I-Cache.
    */
 
-  cp15_clean_dcache((uintptr_t)&_sramfuncs, (uintptr_t)&_eramfuncs)
+  arch_clean_dcache((uintptr_t)&_sramfuncs, (uintptr_t)&_eramfuncs)
 #endif
 
   /* Setup up vector block.  _vector_start and _vector_end are exported from
@@ -780,15 +781,5 @@ void up_boot(void)
    */
 
   sam_earlyserialinit();
-#endif
-
-#ifdef CONFIG_NUTTX_KERNEL
-  /* For the case of the separate user-/kernel-space build, perform whatever
-   * platform specific initialization of the user memory is required.
-   * Normally this just means initializing the user space .data and .bss
-   * segments.
-   */
-
-  sam_userspace();
 #endif
 }

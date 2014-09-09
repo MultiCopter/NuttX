@@ -42,11 +42,30 @@
 
 #include <nuttx/config.h>
 
+/* Is network initialization debug forced on? */
+
+#ifdef CONFIG_NSH_NETINIT_DEBUG
+#  undef  CONFIG_DEBUG_VERBOSE
+#  define CONFIG_DEBUG_VERBOSE 1
+#  undef  CONFIG_DEBUG_NET
+#  define CONFIG_DEBUG_NET 1
+#endif
+
+#include <sys/ioctl.h>
+
+#include <stdint.h>
+#include <string.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <signal.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+
+#include <nuttx/net/mii.h>
 
 #include <apps/netutils/netlib.h>
 #if defined(CONFIG_NSH_DHCPC) || defined(CONFIG_NSH_DNS)
@@ -59,7 +78,7 @@
 #ifdef CONFIG_NET
 
 /****************************************************************************
- * Definitions
+ * Pre-processor Definitions
  ****************************************************************************/
 
 #if defined(CONFIG_NSH_DRIPADDR) && !defined(CONFIG_NSH_DNSIPADDR)
@@ -82,9 +101,25 @@
 #  define NET_DEVNAME "eth0"
 #endif
 
+/* While the network is up, the network monitor really does nothing.  It
+ * will wait for a very long time while waiting, it can be awakened by a
+ * signal indicating a change in network status.
+ */
+
+#define LONG_TIME_SEC    (60*60) /* One hour in seconds */
+#define SHORT_TIME_SEC   (2)     /* 2 seconds */
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
+
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+#ifdef CONFIG_NSH_NETINIT_MONITOR
+static sem_t g_notify_sem;
+#endif
 
 /****************************************************************************
  * Private Function Prototypes
@@ -95,36 +130,46 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: nsh_netinit
+ * Name: nsh_netinit_configure
  *
  * Description:
  *   Initialize the network per the selected NuttX configuration
  *
  ****************************************************************************/
 
-int nsh_netinit(void)
+static void nsh_netinit_configure(void)
 {
- struct in_addr addr;
+  struct in_addr addr;
 #if defined(CONFIG_NSH_DHCPC)
- FAR void *handle;
+  FAR void *handle;
 #endif
 #if (defined(CONFIG_NSH_DHCPC) || defined(CONFIG_NSH_NOMAC)) && !defined(CONFIG_NET_SLIP)
- uint8_t mac[IFHWADDRLEN];
+  uint8_t mac[IFHWADDRLEN];
 #endif
 
-/* Many embedded network interfaces must have a software assigned MAC */
+  nvdbg("Entry\n");
+
+  /* Many embedded network interfaces must have a software assigned MAC */
 
 #if defined(CONFIG_NSH_NOMAC) && !defined(CONFIG_NET_SLIP)
-  mac[0] = 0x00;
-  mac[1] = 0xe0;
-  mac[2] = 0xde;
-  mac[3] = 0xad;
-  mac[4] = 0xbe;
-  mac[5] = 0xef;
+#ifdef CONFIG_NSH_ARCHMAC
+  /* Let platform-specific logic assign the MAC address. */
+
+  (void)nsh_arch_macaddress(mac);
+
+#else
+  /* Use the configured, fixed MAC address */
+
+  mac[0] = (CONFIG_NSH_MACADDR >> (8 * 5)) & 0xff;
+  mac[1] = (CONFIG_NSH_MACADDR >> (8 * 4)) & 0xff;
+  mac[2] = (CONFIG_NSH_MACADDR >> (8 * 3)) & 0xff;
+  mac[3] = (CONFIG_NSH_MACADDR >> (8 * 2)) & 0xff;
+  mac[4] = (CONFIG_NSH_MACADDR >> (8 * 1)) & 0xff;
+  mac[5] = (CONFIG_NSH_MACADDR >> (8 * 0)) & 0xff;
+#endif
+
+  /* Set the MAC address */
+
   netlib_setmacaddr(NET_DEVNAME, mac);
 #endif
 
@@ -195,7 +240,346 @@ int nsh_netinit(void)
     }
 #endif
 
+  nvdbg("Exit\n");
+}
+
+/****************************************************************************
+ * Name: nsh_netinit_signal
+ *
+ * Description:
+ *   This signal handler responds to changes in PHY status.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NSH_NETINIT_MONITOR
+static void nsh_netinit_signal(int signo, FAR siginfo_t *siginfo,
+                               FAR void * context)
+{
+  int semcount;
+  int ret;
+
+  /* What is the count on the semaphore?  Don't over-post */
+
+  ret = sem_getvalue(&g_notify_sem, &semcount);
+  nlldbg("Entry: semcount=%d\n", semcount);
+
+  if (ret == OK && semcount <= 0)
+    {
+      sem_post(&g_notify_sem);
+    }
+
+  nllvdbg("Exit\n");
+}
+#endif
+
+/****************************************************************************
+ * Name: nsh_netinit_monitor
+ *
+ * Description:
+ *   Monitor link status, gracefully taking the link up and down as the
+ *   link becomes available or as the link is lost.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NSH_NETINIT_MONITOR
+static int nsh_netinit_monitor(void)
+{
+  struct timespec abstime;
+  struct timespec reltime;
+  struct ifreq ifr;
+  struct sigaction act;
+  bool devup;
+  int ret;
+  int sd;
+
+  nvdbg("Entry\n");
+
+  /* Initialize the notification semaphore */
+
+  DEBUGVERIFY(sem_init(&g_notify_sem, 0, 0));
+
+  /* Get a socket descriptor that we can use to communicate with the network
+   * interface driver.
+   */
+
+  sd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sd < 0)
+    {
+      ret = -errno;
+      DEBUGASSERT(ret < 0);
+
+      ndbg("ERROR: Failed to create a socket: %d\n", ret);
+      goto errout;
+    }
+
+  /* Attach a signal handler so that we do not lose PHY events */
+
+  act.sa_sigaction = nsh_netinit_signal;
+  act.sa_flags = SA_SIGINFO;
+
+  ret = sigaction(CONFIG_NSH_NETINIT_SIGNO, &act, NULL);
+  if (ret < 0)
+    {
+      ret = -errno;
+      DEBUGASSERT(ret < 0);
+
+      ndbg("ERROR: sigaction() failed: %d\n", ret);
+      goto errout_with_socket;
+    }
+
+  /* Now loop, waiting for changes in link status */
+
+  for (;;)
+    {
+      /* Configure to receive a signal on changes in link status */
+
+      strncpy(ifr.ifr_name, NET_DEVNAME, IFNAMSIZ);
+
+      ifr.ifr_mii_notify_pid   = 0; /* PID=0 means this task */
+      ifr.ifr_mii_notify_signo = CONFIG_NSH_NETINIT_SIGNO;
+      ifr.ifr_mii_notify_arg   = NULL;
+
+      ret = ioctl(sd, SIOCMIINOTIFY, (unsigned long)&ifr);
+      if (ret < 0)
+        {
+          ret = -errno;
+          DEBUGASSERT(ret < 0);
+
+          ndbg("ERROR: ioctl(SIOCMIINOTIFY) failed: %d\n", ret);
+          goto errout_with_sigaction;
+        }
+
+      /* Does the driver think that the link is up or down? */
+
+      ret = ioctl(sd, SIOCGIFFLAGS, (unsigned long)&ifr);
+      if (ret < 0)
+        {
+          ret = -errno;
+          DEBUGASSERT(ret < 0);
+
+          ndbg("ERROR: ioctl(SIOCGIFFLAGS) failed: %d\n", ret);
+          goto errout_with_notification;
+        }
+
+      devup = ((ifr.ifr_flags & IFF_UP) != 0);
+
+      /* Get the current PHY address in use.  This probably does not change,
+       * but just in case...
+       *
+       * NOTE: We are assuming that the network device name is preserved in
+       * the ifr structure.
+       */
+
+      ret = ioctl(sd, SIOCGMIIPHY, (unsigned long)&ifr);
+      if (ret < 0)
+        {
+          ret = -errno;
+          DEBUGASSERT(ret < 0);
+
+          ndbg("ERROR: ioctl(SIOCGMIIPHY) failed: %d\n", ret);
+          goto errout_with_notification;
+        }
+
+      /* Read the PHY status register */
+
+      ifr.ifr_mii_reg_num = MII_MSR;
+
+      ret = ioctl(sd, SIOCGMIIREG, (unsigned long)&ifr);
+      if (ret < 0)
+        {
+          ret = -errno;
+          DEBUGASSERT(ret < 0);
+
+          ndbg("ERROR: ioctl(SIOCGMIIREG) failed: %d\n", ret);
+          goto errout_with_notification;
+        }
+
+      nvdbg("%s: devup=%d PHY address=%02x MSR=%04x\n",
+            ifr.ifr_name, devup, ifr.ifr_mii_phy_id, ifr.ifr_mii_val_out);
+
+      /* Check for link up or down */
+
+      if ((ifr.ifr_mii_val_out & MII_MSR_LINKSTATUS) != 0)
+        {
+          /* Link up... does the drive think that the link is up? */
+
+          if (!devup)
+            {
+              /* No... We just transitioned from link down to link up.
+               * Bring the link up.
+               */
+
+              nvdbg("Bringing the link up\n");
+
+              ifr.ifr_flags = IFF_UP;
+              ret = ioctl(sd, SIOCSIFFLAGS, (unsigned long)&ifr);
+              if (ret < 0)
+                {
+                  ret = -errno;
+                  DEBUGASSERT(ret < 0);
+
+                  ndbg("ERROR: ioctl(SIOCSIFFLAGS) failed: %d\n", ret);
+                  goto errout_with_notification;
+                }
+
+              /* And wait for a short delay.  We will want to recheck the
+               * link status again soon.
+               */
+
+              reltime.tv_sec  = SHORT_TIME_SEC;
+              reltime.tv_nsec = 0;
+            }
+          else
+            {
+              /* The link is still up.  Take a long, well-deserved rest */
+
+              reltime.tv_sec  = LONG_TIME_SEC;
+              reltime.tv_nsec = 0;
+            }
+        }
+      else
+        {
+          /* Link down... Was the driver link state already down? */
+
+          if (devup)
+            {
+              /* No... we just transitioned from link up to link down.  Take
+               * the link down.
+               */
+
+              nvdbg("Taking the link down\n");
+
+              ifr.ifr_flags = IFF_DOWN;
+              ret = ioctl(sd, SIOCSIFFLAGS, (unsigned long)&ifr);
+              if (ret < 0)
+                {
+                  ret = -errno;
+                  DEBUGASSERT(ret < 0);
+
+                  ndbg("ERROR: ioctl(SIOCSIFFLAGS) failed: %d\n", ret);
+                  goto errout_with_notification;
+                }
+            }
+
+          /* In either case, wait for the short, configurable delay */
+
+          reltime.tv_sec  = CONFIG_NSH_NETINIT_RETRYMSEC / 1000;
+          reltime.tv_nsec = (CONFIG_NSH_NETINIT_RETRYMSEC % 1000) * 1000000;
+        }
+
+      /* Now wait for either the semaphore to be posted for a timed-out to
+       * occur.
+       */
+
+      sched_lock();
+      DEBUGVERIFY(clock_gettime(CLOCK_REALTIME, &abstime));
+
+      abstime.tv_sec  += reltime.tv_sec;
+      abstime.tv_nsec += reltime.tv_nsec;
+      if (abstime.tv_nsec > 1000000000)
+        {
+          abstime.tv_sec++;
+          abstime.tv_nsec -= 1000000000;
+        }
+
+      (void)sem_timedwait(&g_notify_sem, &abstime);
+      sched_unlock();
+    }
+
+  /* TODO: Stop the PHY notifications and remove the signal handler. */
+
+errout_with_notification:
+#  warning Missing logic
+errout_with_sigaction:
+#  warning Missing logic
+errout_with_socket:
+  close(sd);
+errout:
+  ndbg("Aborting\n");
+  return ret;
+}
+#endif
+
+/****************************************************************************
+ * Name: nsh_netinit_thread
+ *
+ * Description:
+ *   Initialize the network per the selected NuttX configuration
+ *
+ ****************************************************************************/
+
+static pthread_addr_t nsh_netinit_thread(pthread_addr_t arg)
+{
+  nvdbg("Entry\n");
+
+  /* Configure the network */
+
+  nsh_netinit_configure();
+
+#ifdef CONFIG_NSH_NETINIT_MONITOR
+  /* Monitor the network status */
+
+  nsh_netinit_monitor();
+#endif
+
+  nvdbg("Exit\n");
+  return NULL;
+}
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: nsh_netinit
+ *
+ * Description:
+ *   Initialize the network per the selected NuttX configuration
+ *
+ ****************************************************************************/
+
+int nsh_netinit(void)
+{
+#ifdef CONFIG_NSH_NETINIT_THREAD
+  struct sched_param  sparam;
+  pthread_attr_t      attr;
+  pthread_t           tid;
+  int                 ret;
+
+  /* Start the network initialization thread to perform the network bring-up
+   * asynchronously.
+   */
+
+  pthread_attr_init(&attr);
+  sparam.sched_priority = CONFIG_NSH_NETINIT_THREAD_PRIORITY;
+  (void)pthread_attr_setschedparam(&attr, &sparam);
+  (void)pthread_attr_setstacksize(&attr, CONFIG_NSH_NETINIT_THREAD_STACKSIZE);
+
+  nvdbg("Starting netinit thread\n");
+  ret = pthread_create(&tid, &attr, nsh_netinit_thread, NULL);
+  if (ret != OK)
+    {
+      ndbg("ERROR: Failed to create netinit thread: %d\n", ret);
+      (void)nsh_netinit_thread(NULL);
+    }
+  else
+    {
+      /* Detach the thread because we will not be joining to it */
+
+      (void)pthread_detach(tid);
+
+      /* Name the thread */
+
+      pthread_setname_np(tid, "netinit");
+    }
+
   return OK;
+
+#else
+  /* Perform network initialization sequentially */
+
+  nsh_netinit_configure();
+#endif
 }
 
 #endif /* CONFIG_NET */

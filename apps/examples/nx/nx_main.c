@@ -141,7 +141,7 @@ nxgl_mxpixel_t g_tbcolor[CONFIG_NX_NPLANES];
  * Name: nxeg_drivemouse
  ****************************************************************************/
 
-#ifdef CONFIG_NX_MOUSE
+#ifdef CONFIG_NX_XYINPUT
 static void nxeg_drivemouse(void)
 {
   nxgl_coord_t x;
@@ -617,7 +617,11 @@ static int nxeg_initialize(void)
  * Name: nx_main
  ****************************************************************************/
 
+#ifdef CONFIG_BUILD_KERNEL
+int main(int argc, FAR char *argv[])
+#else
 int nx_main(int argc, char *argv[])
+#endif
 {
   NXEGWINDOW hwnd1;
   NXEGWINDOW hwnd2;
@@ -703,7 +707,7 @@ int nx_main(int argc, char *argv[])
   pt.x = g_xres / 8;
   pt.y = g_yres / 8;
 
-  message("nx_main: Set window #1 postion to (%d,%d)\n", pt.x, pt.y);
+  message("nx_main: Set window #1 position to (%d,%d)\n", pt.x, pt.y);
   ret = nxeg_setposition(hwnd1, &pt);
   if (ret < 0)
     {
@@ -766,7 +770,7 @@ int nx_main(int argc, char *argv[])
   pt.x = g_xres - size.w - pt.x;
   pt.y = g_yres - size.h - pt.y;
 
-  message("nx_main: Set hwnd2 postion to (%d,%d)\n", pt.x, pt.y);
+  message("nx_main: Set hwnd2 position to (%d,%d)\n", pt.x, pt.y);
   ret = nxeg_setposition(hwnd2, &pt);
   if (ret < 0)
     {
@@ -825,7 +829,7 @@ int nx_main(int argc, char *argv[])
 
   /* Put mouse left-button clicks all over the screen and see who responds */
 
-#ifdef CONFIG_NX_MOUSE
+#ifdef CONFIG_NX_XYINPUT
   nxeg_drivemouse();
 
   /* Sleep a bit */
@@ -862,7 +866,7 @@ int nx_main(int argc, char *argv[])
 
   /* Put mouse left-button clicks all over the screen and see who responds */
 
-#ifdef CONFIG_NX_MOUSE
+#ifdef CONFIG_NX_XYINPUT
   nxeg_drivemouse();
 #endif
 
