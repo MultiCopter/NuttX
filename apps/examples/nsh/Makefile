@@ -51,6 +51,7 @@ SRCS = $(ASRCS) $(CSRCS) $(MAINSRC)
 OBJS = $(AOBJS) $(COBJS)
 
 ifneq ($(CONFIG_BUILD_KERNEL),y)
+  COBJS += $(MAINOBJ)
   OBJS += $(MAINOBJ)
 endif
 
