@@ -357,6 +357,8 @@
 #define RCC_APB1ENR_CAN2EN           (1 << 26) /* Bit 26: CAN 2 clock enable */
 #define RCC_APB1ENR_PWREN            (1 << 28) /* Bit 28: Power interface clock enable */
 #define RCC_APB1ENR_DACEN            (1 << 29) /* Bit 29: DAC interface clock enable */
+#define RCC_APB1ENR_UART7EN          (1 << 30) /* Bit 19: UART7 clock enable */
+#define RCC_APB1ENR_UART8EN          (1 << 31) /* Bit 20: UART8 clock enable */
 
 /* APB2 Peripheral Clock enable register */
 
